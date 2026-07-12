@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html><body style='background:#222;display:flex;justify-content:center;align-items:center;height:100vh;margin:0'>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4A90D9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2C5F9E;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="shieldInner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5BA0E9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3A6FBF;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#00000040"/>
+    </filter>
+    <filter id="innerShadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000030"/>
+    </filter>
+  </defs>
+
+  <!-- Shield outline (outer) -->
+  <path d="M256 32 L448 120 L448 260 C448 360 360 448 256 480 C152 448 64 360 64 260 L64 120 Z"
+        fill="url(#shieldGrad)" filter="url(#shadow)" />
+
+  <!-- Shield inner highlight -->
+  <path d="M256 52 L428 132 L428 260 C428 348 350 428 256 458 C162 428 84 348 84 260 L84 132 Z"
+        fill="url(#shieldInner)" opacity="0.6" />
+
+  <!-- Shield border -->
+  <path d="M256 32 L448 120 L448 260 C448 360 360 448 256 480 C152 448 64 360 64 260 L64 120 Z"
+        fill="none" stroke="#1E3F6F" stroke-width="6" />
+
+  <!-- Inner shield shape for depth -->
+  <path d="M256 60 L420 136 L420 258 C420 340 348 414 256 444 C164 414 92 340 92 258 L92 136 Z"
+        fill="none" stroke="#FFFFFF20" stroke-width="2" />
+
+  <!-- Letter G -->
+  <text x="256" y="310" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
+        font-size="240" font-weight="700" fill="#FFFFFF" text-anchor="middle"
+        dominant-baseline="central" filter="url(#innerShadow)">G</text>
+
+  <!-- Screen/camera icon accent (small) -->
+  <rect x="200" y="380" width="112" height="6" rx="3" fill="#FFFFFF40" />
+</svg>
+
+</body></html>
