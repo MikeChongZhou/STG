@@ -1,7 +1,7 @@
 name: screenguardian
 description: ScreenGuardian - Cross-platform screen time manager
 publish_to: 'none'
-version: 1.0.5+5
+version: 1.0.7+7
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -19,6 +19,7 @@ dependencies:
   path: ^1.8.0
   crypto: ^3.0.0
   shelf: ^1.4.0
+  bonsoir: ^2.1.0
 
 dev_dependencies:
   flutter_test:

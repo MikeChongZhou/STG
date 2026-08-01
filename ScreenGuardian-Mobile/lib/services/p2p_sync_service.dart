@@ -1,12 +1,13 @@
-/// P2P Sync Service - WiFi LAN direct device-to-device sync
-/// Uses trusted device list: only approved devices can sync
+/// P2P Sync Service - mDNS/Bonjour-based LAN sync for Mobile
+///
+/// Discovery: Uses mDNS (multicast DNS) via Bonsoir to advertise and
+/// discover ScreenGuardian devices on the local network. No IP scanning.
 ///
 /// Flow:
-///   1. Device A & B on same WiFi → auto-discover each other
-///   2. Each sees the other as "pending" in device list
-///   3. User approves devices they trust
-///   4. Enter pairing code to enable encryption
-///   5. Only approved + paired devices exchange data
+///   1. Each device advertises _screenguardian._tcp via mDNS
+///   2. Discovered devices appear as "pending" in device list
+///   3. User approves + enters pairing code to enable encrypted sync
+///   4. Only approved + paired devices exchange data
 
 import 'dart:async';
 import 'dart:convert';
@@ -14,12 +15,15 @@ import 'dart:io';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:crypto/crypto.dart';
+import 'package:bonsoir/bonsoir.dart';
 import '../constants.dart';
 import 'local_store.dart';
 import 'trusted_devices.dart';
 import 'sync_security.dart';
 
+const int _syncPort = 19090;
 const int _syncIntervalMs = 60 * 1000; // 1 minute on LAN
+const String _serviceType = '_screenguardian._tcp';
 
 class SyncResult {
   final bool success;
@@ -34,12 +38,15 @@ class P2PSyncService {
   late final TrustedDevicesManager _trustedDevices;
   HttpServer? _server;
   Timer? _syncTimer;
-  Timer? _scanTimer;
   bool _syncing = false;
   bool _running = false;
 
   String? _pairingCode;
   bool _paired = false;
+
+  // mDNS
+  BonsoirService? _mdnsService;
+  BonsoirDiscovery? _mdnsDiscovery;
 
   // Streams
   final _devicesController = StreamController<List<TrustedDevice>>.broadcast();
@@ -59,21 +66,21 @@ class P2PSyncService {
     try {
       await _trustedDevices.load();
 
-      final port = 9090; // Fixed port for P2P discovery
-      _server = await shelf_io.serve(_handleRequest, InternetAddress.anyIPv4, port);
-      print('[P2P] Server on port $port');
+      // Start HTTP server for sync
+      _server = await shelf_io.serve(_handleRequest, InternetAddress.anyIPv4, _syncPort);
+      print('[P2P] HTTP sync server on port $_syncPort');
 
       if (pairingCode != null && pairingCode.isNotEmpty) {
         _pairingCode = pairingCode;
         _paired = true;
       }
 
+      // Start mDNS advertisement
+      await _startMdns();
+
       _running = true;
-      _scanTimer = Timer.periodic(const Duration(seconds: 20), (_) => _scanLAN());
       _syncTimer = Timer.periodic(const Duration(milliseconds: _syncIntervalMs), (_) => syncWithAll());
 
-      // Initial scan
-      _scanLAN();
       return true;
     } catch (e) {
       print('[P2P] Start failed: $e');
@@ -82,62 +89,87 @@ class P2PSyncService {
   }
 
   void stop() {
+    _mdnsDiscovery?.stop();
+    _mdnsService?.unregister();
     _server?.close();
     _server = null;
     _syncTimer?.cancel();
-    _scanTimer?.cancel();
     _running = false;
   }
 
   // ============================================================
-  // LAN Discovery
+  // mDNS Discovery
   // ============================================================
 
-  Future<void> _scanLAN() async {
-    final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLinkLocal: false);
-    for (final iface in interfaces) {
-      for (final addr in iface.addresses) {
-        final subnet = addr.address.substring(0, addr.address.lastIndexOf('.'));
-        // Quick parallel scan
-        final futures = <Future>[];
-        for (int i = 1; i <= 254; i++) {
-          final ip = '$subnet.$i';
-          if (ip == addr.address) continue;
-          futures.add(_probe(ip));
-        }
-        await Future.wait(futures, eagerError: false);
+  Future<void> _startMdns() async {
+    // Register our service
+    _mdnsService = BonsoirService(
+      name: _store.deviceId,
+      type: '$_serviceType._tcp',
+      port: _syncPort,
+      attributes: {
+        'id': _store.deviceId,
+        'name': _store.deviceName,
+        'platform': _store.deviceInfo.platform.name,
+        'version': appVersion,
+      },
+    );
+
+    await _mdnsService!.register();
+    print('[P2P] mDNS service registered: ${_store.deviceName}');
+
+    // Discover other services
+    _mdnsDiscovery = BonsoirDiscovery(type: '$_serviceType._tcp');
+    await _mdnsDiscovery!.ready;
+
+    _mdnsDiscovery!.eventStream?.listen((event) {
+      if (event.type == BonsoirDiscoveryEventType.serviceFound) {
+        final service = event.service;
+        if (service == null) return;
+        // Skip ourselves
+        if (service.name == _store.deviceId) return;
+
+        // Resolve the service to get IP and attributes
+        service.resolve(mdnsDiscovery!.serviceResolver);
+      } else if (event.type == BonsoirDiscoveryEventType.serviceResolved) {
+        final service = event.service;
+        if (service == null) return;
+        _onServiceResolved(service);
+      } else if (event.type == BonsoirDiscoveryEventType.serviceLost) {
+        final service = event.service;
+        if (service == null) return;
+        print('[P2P] Device lost: ${service.name}');
       }
-    }
-    _devicesController.add(_trustedDevices.allDevices);
+    });
+
+    _mdnsDiscovery!.start();
+    print('[P2P] mDNS discovery started');
   }
 
-  Future<void> _probe(String ip) async {
-    for (final port in [9090]) {
-      try {
-        final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 300);
-        final req = await client.getUrl(Uri.parse('http://$ip:$port/api/ping'));
-        final resp = await req.close();
-        if (resp.statusCode == 200) {
-          final body = await resp.transform(utf8.decoder).join();
-          final data = jsonDecode(body) as Map<String, dynamic>;
-          final deviceId = data['deviceId'] as String?;
-          final deviceName = data['deviceName'] as String?;
-          if (deviceId != null && deviceId != _store.deviceId) {
-            // Auto-register as pending if not already known
-            await _trustedDevices.discoverDevice(
-              deviceId: deviceId,
-              deviceName: deviceName ?? 'Unknown Device',
-              ip: ip,
-              port: port,
-            );
-            // Update endpoint if device was already known
-            await _trustedDevices.updateDeviceEndpoint(deviceId, ip, port);
-          }
-        }
-        client.close();
-        break; // found it, no need to try more ports
-      } catch (_) {}
-    }
+  void _onServiceResolved(BonsoirService service) {
+    final attrs = service.attributes;
+    final deviceId = attrs['id'] ?? service.name;
+    final deviceName = attrs['name'] ?? 'Unknown Device';
+    final platform = attrs['platform'] ?? 'unknown';
+
+    if (deviceId == _store.deviceId) return;
+
+    // Get IP from the resolved service
+    final ip = service.host;
+    if (ip == null) return;
+
+    _trustedDevices.discoverDevice(
+      deviceId: deviceId,
+      deviceName: deviceName,
+      ip: ip,
+      port: service.port,
+      platform: platform,
+    );
+
+    _trustedDevices.updateDeviceEndpoint(deviceId, ip, service.port);
+    _devicesController.add(_trustedDevices.allDevices);
+
+    print('[P2P] Discovered: $deviceName ($ip:${service.port})');
   }
 
   // ============================================================
@@ -157,12 +189,14 @@ class P2PSyncService {
       }), headers: {'Content-Type': 'application/json'});
     }
 
-    // Device info (for pairing code verification)
-    if (path == '/api/verify' && request.method == 'POST') {
+    // Pairing
+    if (path == '/api/pair' && request.method == 'POST') {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final code = body['pairingCode'] as String?;
-      if (code == _pairingCode && _pairingCode != null) {
-        return shelf.Response.ok(jsonEncode({'status': 'verified'}));
+      final deviceId = body['deviceId'] as String?;
+      if (code == _pairingCode && _pairingCode != null && deviceId != null) {
+        await _trustedDevices.approveDevice(deviceId);
+        return shelf.Response.ok(jsonEncode({'status': 'paired'}));
       }
       return shelf.Response.forbidden(jsonEncode({'status': 'invalid_code'}));
     }
@@ -327,7 +361,6 @@ class P2PSyncService {
       ..sort((a, b) => (a['startTime'] as String).compareTo(b['startTime'] as String));
     await _store.writeRawJson('sessions/$month.json', merged);
 
-    // Update daily summaries for affected dates
     final affectedDates = merged.map((s) => s['date'] as String).toSet();
     for (final date in affectedDates) {
       await _store.updateDailySummary(date);

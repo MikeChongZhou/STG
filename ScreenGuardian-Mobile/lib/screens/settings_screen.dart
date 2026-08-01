@@ -11,6 +11,8 @@ import '../services/local_store.dart';
 import '../services/p2p_sync_service.dart';
 import '../services/trusted_devices.dart';
 import '../utils/i18n.dart';
+import '../services/screentime_service.dart';
+import 'weekly_plan_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final P2PSyncService? p2pSync;
@@ -28,7 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _language = 'system';
   bool _eyeRestEnabled = true;
   bool _postureEnabled = true;
-  double _postureInterval = 30;
+  // Posture interval is now derived: 2× eye rest interval (40 min default)
   bool _meetingMode = false;
   bool _overtimeEnabled = true;
   bool _autoStart = true;
@@ -63,7 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _language = config.language;
       _eyeRestEnabled = config.eyeRestEnabled;
       _postureEnabled = config.postureEnabled;
-      _postureInterval = config.postureIntervalMinutes.toDouble();
+      // Posture interval derived from eye rest
       _meetingMode = config.meetingMode;
       _overtimeEnabled = config.overtimeEnabled;
       _deviceName = config.deviceName ?? '';
@@ -155,11 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Card(
               child: Column(children: [
                 SwitchListTile(title: Text(AppStrings.t('settings.eye_rest')), value: _eyeRestEnabled, onChanged: (v) => setState(() => _eyeRestEnabled = v)),
-                SwitchListTile(title: Text(AppStrings.t('settings.posture')), value: _postureEnabled, onChanged: (v) => setState(() => _postureEnabled = v)),
-                ListTile(
-                  title: Text(AppStrings.t('settings.posture_interval')),
-                  subtitle: Slider(value: _postureInterval, min: 15, max: 60, divisions: 45, label: '${_postureInterval.round()} min', onChanged: (v) => setState(() => _postureInterval = v)),
-                ),
+                SwitchListTile(title: Text(AppStrings.t('settings.posture')), subtitle: Text(AppStrings.lang.startsWith('zh') ? '每40分钟提醒一次（与用眼休息合并）' : 'Every 40 min (combined with eye rest)'), value: _postureEnabled, onChanged: (v) => setState(() => _postureEnabled = v)),
                 SwitchListTile(title: Text(AppStrings.t('settings.meeting_mode')), subtitle: Text(AppStrings.t('settings.meeting_mode_desc')), value: _meetingMode, onChanged: (v) => setState(() => _meetingMode = v)),
               ]),
             ),
@@ -171,6 +169,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Card(
               child: Column(children: [
                 SwitchListTile(title: Text(AppStrings.t('settings.overtime')), value: _overtimeEnabled, onChanged: (v) => setState(() => _overtimeEnabled = v)),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Text('🎯', style: TextStyle(fontSize: 24)),
+                  title: Text(AppStrings.lang.startsWith('zh') ? '周计划管理' : 'Weekly Plan'),
+                  subtitle: Text(AppStrings.lang.startsWith('zh') ? '设定每周屏幕使用目标' : 'Set weekly screen time goals'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const WeeklyPlanScreen(),
+                    ));
+                  },
+                ),
               ]),
             ),
 
@@ -245,6 +255,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ]),
               ),
+            ],
+
+            // === iOS ScreenTime ===
+            if (Platform.isIOS) ...[
+              _sectionHeader(AppStrings.lang.startsWith('zh') ? '📱 屏幕使用时间' : '📱 Screen Time'),
+              Card(
+                child: Column(children: [
+                  FutureBuilder<String>(
+                    future: ScreenTimeService.getAuthorizationStatus(),
+                    builder: (context, snapshot) {
+                      final status = snapshot.data ?? 'unknown';
+                      final isAuthorized = status == 'approved';
+                      return Column(children: [
+                        ListTile(
+                          leading: Icon(
+                            isAuthorized ? Icons.check_circle : Icons.warning,
+                            color: isAuthorized ? Colors.green : Colors.orange,
+                          ),
+                          title: Text(AppStrings.lang.startsWith('zh') ? 'ScreenTime 授权' : 'ScreenTime Authorization'),
+                          subtitle: Text(
+                            isAuthorized
+                                ? (AppStrings.lang.startsWith('zh') ? '已授权 — 设备用时由系统追踪' : 'Authorized — device usage tracked by system')
+                                : (AppStrings.lang.startsWith('zh') ? '未授权 — 请授权以启用设备级用时追踪' : 'Not authorized — please authorize for device-level tracking'),
+                            style: TextStyle(fontSize: 12, color: isAuthorized ? Colors.green[700] : Colors.orange[700]),
+                          ),
+                          trailing: !isAuthorized
+                              ? FilledButton.tonal(
+                                  onPressed: () async {
+                                    try {
+                                      await ScreenTimeService.requestAuthorization();
+                                      if (mounted) setState(() {});
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                          content: Text('${AppStrings.lang.startsWith('zh') ? '授权失败' : 'Authorization failed'}: $e'),
+                                          backgroundColor: Colors.red,
+                                        ));
+                                      }
+                                    }
+                                  },
+                                  child: Text(AppStrings.lang.startsWith('zh') ? '去授权' : 'Authorize'),
+                                )
+                              : null,
+                        ),
+                        if (isAuthorized) ...[
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const Text('🛡️', style: TextStyle(fontSize: 20)),
+                            title: Text(AppStrings.lang.startsWith('zh') ? '提醒方式' : 'Reminder Method'),
+                            subtitle: Text(
+                              AppStrings.lang.startsWith('zh')
+                                  ? '系统级遮罩（全屏强制提醒，覆盖所有应用）'
+                                  : 'System Shield (full-screen overlay, covers all apps)',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const Icon(Icons.info_outline, color: Colors.grey),
+                            title: Text(AppStrings.lang.startsWith('zh') ? '如何工作' : 'How it works'),
+                            subtitle: Text(
+                              AppStrings.lang.startsWith('zh')
+                                  ? '每 20 分钟提醒用眼休息，每 40 分钟提醒姿势切换。系统会显示遮罩覆盖所有应用，倒计时结束后自动移除。'
+                                  : 'Eye rest every 20 min, posture change every 40 min. A system shield covers all apps and auto-removes after countdown.',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ]);
+                    },
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 16),
             ],
 
             const SizedBox(height: 16),
@@ -569,7 +653,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _language = 'system';
       _eyeRestEnabled = true;
       _postureEnabled = true;
-      _postureInterval = 30;
+      // Posture interval derived
       _meetingMode = false;
       _overtimeEnabled = true;
       _autoStart = true;
@@ -591,7 +675,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'language': _language,
       'eyeRestEnabled': _eyeRestEnabled,
       'postureEnabled': _postureEnabled,
-      'postureIntervalMinutes': _postureInterval.round(),
+      'postureIntervalMinutes': 40, // derived: 2× eye rest
       'meetingMode': _meetingMode,
       'overtimeEnabled': _overtimeEnabled,
       'deviceName': _deviceName.isNotEmpty ? _deviceName : null,

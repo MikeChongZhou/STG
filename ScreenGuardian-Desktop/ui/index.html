@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+  <title>ScreenGuardian</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="sidebar">
+    <div class="logo">
+      <span class="emoji">🛡️</span>
+      <span class="title">ScreenGuardian</span>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item active" data-page="home">
+        <span class="icon">🏠</span>
+        <span class="label" data-i18n="nav.home">首页</span>
+      </li>
+      <li class="nav-item" data-page="report">
+        <span class="icon">📊</span>
+        <span class="label" data-i18n="nav.report">报告</span>
+      </li>
+      <li class="nav-item" data-page="plan">
+        <span class="icon">🎯</span>
+        <span class="label" data-i18n="nav.plan">周计划</span>
+      </li>
+      <li class="nav-item" data-page="tracking">
+        <span class="icon">📡</span>
+        <span class="label" data-i18n="nav.tracking">跟踪</span>
+      </li>
+      <li class="nav-item" data-page="settings">
+        <span class="icon">⚙️</span>
+        <span class="label" data-i18n="nav.settings">设置</span>
+      </li>
+      <li class="nav-item" data-page="about">
+        <span class="icon">ℹ️</span>
+        <span class="label" data-i18n="nav.about">关于</span>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <button class="btn-minimize" id="btnMinimize" title="最小化到托盘">
+        📤 <span data-i18n="nav.minimize">最小化到托盘</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="content">
+    <!-- Home Page -->
+    <div class="page active" id="page-home">
+      <div class="header-card">
+        <div class="header-left">
+          <span class="header-emoji">🛡️</span>
+          <div>
+            <div class="header-title">ScreenGuardian</div>
+            <div class="header-version">V1.0.6</div>
+          </div>
+        </div>
+        <div class="header-stats">
+          <div class="stat">
+            <span class="stat-emoji">⏱️</span>
+            <span class="stat-value" id="currentElapsed">0分钟</span>
+            <span class="stat-label" data-i18n="home.current">本次</span>
+          </div>
+          <div class="stat">
+            <span class="stat-emoji">📊</span>
+            <span class="stat-value" id="todayTotal">0分钟</span>
+            <span class="stat-label" data-i18n="home.today">今日</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-grid">
+        <div class="menu-card" data-nav="report">
+          <span class="menu-emoji">📊</span>
+          <span class="menu-label" data-i18n="menu.report">报告</span>
+        </div>
+        <div class="menu-card" data-nav="plan">
+          <span class="menu-emoji">🎯</span>
+          <span class="menu-label" data-i18n="menu.plan">周计划</span>
+        </div>
+        <div class="menu-card" data-nav="tracking">
+          <span class="menu-emoji">📡</span>
+          <span class="menu-label" data-i18n="menu.tracking">跟踪</span>
+        </div>
+        <div class="menu-card" data-nav="settings">
+          <span class="menu-emoji">⚙️</span>
+          <span class="menu-label" data-i18n="menu.settings">设置</span>
+        </div>
+      </div>
+
+      <div class="sync-status" id="syncStatus" style="display:none">
+        <span class="sync-dot"></span>
+        <span data-i18n="home.sync_running">局域网同步运行中</span>
+        <span class="sync-lock" id="syncLock" style="display:none">🔒</span>
+      </div>
+    </div>
+
+    <!-- Report Page -->
+    <div class="page" id="page-report">
+      <h2 data-i18n="report.title">屏幕用时报告</h2>
+      <div class="report-controls">
+        <div class="segmented">
+          <button class="seg-btn active" data-mode="daily" data-i18n="report.daily">日报</button>
+          <button class="seg-btn" data-mode="range" data-i18n="report.range">多日报</button>
+        </div>
+        <div class="date-pickers">
+          <input type="date" id="reportDate" class="date-input">
+          <input type="date" id="reportStartDate" class="date-input" style="display:none">
+          <input type="date" id="reportEndDate" class="date-input" style="display:none">
+          <button class="btn-primary" id="btnGenerateReport" data-i18n="report.generate">生成报告</button>
+        </div>
+      </div>
+      <div id="reportContent" class="report-content">
+        <div class="empty-state">
+          <span class="emoji">📊</span>
+          <p data-i18n="report.empty">暂无数据</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weekly Plan Page -->
+    <div class="page" id="page-plan">
+      <h2 data-i18n="plan.title">周计划管理</h2>
+      <div id="planContent" class="plan-content">
+        <div class="plan-header-card">
+          <span class="emoji">📅</span>
+          <h3 data-i18n="plan.this_week">本周计划</h3>
+          <p id="planWeekRange"></p>
+        </div>
+        <div class="plan-edit-card" id="planEditCard">
+          <h3 data-i18n="plan.set">设定计划</h3>
+          <div class="plan-display" id="planDisplay">
+            <span class="plan-value" id="planValue">--</span>
+            <span class="plan-source" id="planSource"></span>
+          </div>
+          <div class="plan-slider-row">
+            <input type="range" id="planSlider" min="30" max="720" value="480" step="10">
+            <span id="planSliderValue">8小时</span>
+          </div>
+          <div class="plan-presets">
+            <button class="preset-btn" data-minutes="120">2h</button>
+            <button class="preset-btn" data-minutes="240">4h</button>
+            <button class="preset-btn" data-minutes="360">6h</button>
+            <button class="preset-btn active" data-minutes="480">8h</button>
+            <button class="preset-btn" data-minutes="600">10h</button>
+          </div>
+          <button class="btn-primary" id="btnSavePlan" data-i18n="common.save">保存</button>
+        </div>
+        <div class="plan-progress-card" id="planProgressCard" style="display:none">
+          <h3 data-i18n="plan.week_progress">本周进度</h3>
+          <div id="planProgressContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tracking Page -->
+    <div class="page" id="page-tracking">
+      <h2>LLM Ranking</h2>
+      <div class="tracking-controls">
+        <button class="btn-primary" id="btnRefreshRanking" data-i18n="tracking.refresh">刷新数据</button>
+        <span class="tracking-source" id="trackingSource"></span>
+      </div>
+      <div id="trackingContent" class="tracking-content">
+        <div class="loading" data-i18n="tracking.fetching">正在获取数据...</div>
+      </div>
+    </div>
+
+    <!-- Settings Page -->
+    <div class="page" id="page-settings">
+      <h2 data-i18n="settings.title">设置</h2>
+      <div class="settings-section">
+        <h3 data-i18n="settings.general">基本设置</h3>
+        <div class="setting-row">
+          <label data-i18n="settings.language">界面语言</label>
+          <select id="settingLanguage">
+            <option value="system" data-i18n="settings.language_system">跟随系统</option>
+            <option value="zh-CN">简体中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.device_name">设备名称</label>
+          <input type="text" id="settingDeviceName" placeholder="给这台设备起个名字">
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.auto_start">开机自启</label>
+          <label class="toggle">
+            <input type="checkbox" id="settingAutoStart" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 data-i18n="settings.health">健康提醒</h3>
+        <div class="setting-row">
+          <label data-i18n="settings.eye_rest">用眼休息提醒</label>
+          <label class="toggle">
+            <input type="checkbox" id="settingEyeRest" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.posture">姿势切换提醒</label>
+          <label class="toggle">
+            <input type="checkbox" id="settingPosture" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.posture_interval">姿势切换间隔</label>
+          <span style="color:var(--text-muted);font-size:13px">40 min (2× eye rest)</span>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.meeting_mode">会议模式</label>
+          <label class="toggle">
+            <input type="checkbox" id="settingMeetingMode">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.overtime">超时提醒</label>
+          <label class="toggle">
+            <input type="checkbox" id="settingOvertime" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 data-i18n="settings.sync">📡 局域网同步（P2P / mDNS）</h3>
+        <div class="setting-row">
+          <label>同步状态</label>
+          <span id="syncStatusText">未启动</span>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.pairing_code">配对码</label>
+          <input type="text" id="settingPairingCode" placeholder="输入配对码加密同步数据">
+        </div>
+        <div class="setting-row">
+          <button class="btn-primary" id="btnStartP2P">启动同步服务</button>
+          <button class="btn-secondary" id="btnTriggerSync">立即同步</button>
+        </div>
+        <div class="sync-info" id="syncInfo"></div>
+        <div id="discoveredDevices" style="margin-top:12px"></div>
+      </div>
+
+      <div class="settings-actions">
+        <button class="btn-secondary" id="btnResetSettings" data-i18n="settings.reset">重置默认值</button>
+        <button class="btn-primary" id="btnSaveSettings" data-i18n="settings.save">保存</button>
+      </div>
+    </div>
+
+    <!-- About Page -->
+    <div class="page" id="page-about">
+      <div class="about-content">
+        <span class="about-emoji">🛡️</span>
+        <h1>ScreenGuardian</h1>
+        <p class="about-subtitle" data-i18n="about.subtitle">屏幕守护者</p>
+        <div class="about-info">
+          <p id="aboutVersion"></p>
+          <p data-i18n="about.developer">开发者：TimberTrail</p>
+          <p data-i18n="about.license">免费使用</p>
+        </div>
+        <p class="about-desc" data-i18n="about.description">跨平台屏幕用时管理工具，守护您的眼睛和健康</p>
+
+        <div class="about-p2p">
+          <h3 data-i18n="about.p2p_title">📡 隐私与同步说明</h3>
+          <p data-i18n="about.p2p_1">1. 本应用使用 P2P 局域网同步设备数据...</p>
+          <p data-i18n="about.p2p_2">2. 本应用不使用云存储...</p>
+          <p data-i18n="about.p2p_3">3. 只有您批准的设备才能进行数据同步。</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Overtime Alert Modal -->
+  <div class="modal-overlay" id="overtimeModal" style="display:none">
+    <div class="modal-card">
+      <span class="modal-emoji" id="overtimeEmoji">⚠️</span>
+      <h2 id="overtimeTitle" data-i18n="overtime.title">屏幕用时已超计划</h2>
+      <div class="overtime-stats">
+        <div class="overtime-row">
+          <span>📊</span>
+          <span data-i18n="overtime.today">今日累计</span>
+          <span id="overtimeTotal" class="overtime-value"></span>
+        </div>
+        <div class="overtime-row">
+          <span>📝</span>
+          <span data-i18n="overtime.planned">计划用时</span>
+          <span id="overtimePlanned" class="overtime-value"></span>
+        </div>
+        <hr>
+        <div class="overtime-row">
+          <span>⚡</span>
+          <span data-i18n="overtime.exceeded">已超出</span>
+          <span id="overtimeExceeded" class="overtime-value overtime-red"></span>
+        </div>
+      </div>
+      <p class="overtime-tip" id="overtimeTip" data-i18n="overtime.tip">💡 建议适当休息，保护眼睛和身体</p>
+      <div class="modal-actions">
+        <button class="btn-primary" id="btnOvertimeOk" data-i18n="overtime.acknowledge">我知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weekly Summary Modal -->
+  <div class="modal-overlay" id="weeklySummaryModal" style="display:none">
+    <div class="modal-card">
+      <span class="modal-emoji">📊</span>
+      <h2 data-i18n="weekly.title">上周用时总结</h2>
+      <div id="weeklySummaryContent"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="btnWeeklyOk" data-i18n="common.ok">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

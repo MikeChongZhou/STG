@@ -12,7 +12,10 @@ import 'services/local_store.dart';
 import 'services/session_manager.dart';
 import 'services/reminder_manager.dart';
 import 'services/p2p_sync_service.dart';
+import 'services/screentime_service.dart';
 import 'screens/home_screen.dart';
+import 'dialogs/overtime_alert_dialog.dart';
+import 'dialogs/combined_reminder_dialog.dart';
 import 'utils/i18n.dart';
 import 'utils/time_utils.dart';
 
@@ -90,14 +93,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final p2pSync = P2PSyncService(store);
     // Don't auto-start - user must pair first via settings
 
-    // Listen for reminder events
-    reminderManager.reminderStream.listen((event) {
-      if (event.type == ReminderType.eyeRest) {
-        _handleEyeRestReminder(event);
-      } else if (event.type == ReminderType.postureChange) {
-        _handlePostureChangeReminder(event);
-      }
-    });
+    // Listen for reminder events (Android only — iOS uses ScreenTime Shield overlays)
+    if (Platform.isAndroid) {
+      reminderManager.reminderStream.listen((event) {
+        if (event.type == ReminderType.eyeRest || event.type == ReminderType.eyeRestAndPosture) {
+          _handleReminderEvent(event);
+        }
+      });
+    }
 
     // Listen for screen off/on events from Android BroadcastReceiver
     if (Platform.isAndroid) {
@@ -154,7 +157,26 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       } catch (e) {
         print('[Main] Failed to start foreground service: $e');
       }
+    }
 
+    // Start ScreenTime monitoring on iOS
+    if (Platform.isIOS) {
+      try {
+        final authStatus = await ScreenTimeService.getAuthorizationStatus();
+        if (authStatus == 'approved') {
+          await ScreenTimeService.startMonitoring();
+          _iosScreenTimeActive = true;
+          print('[Main] ScreenTime monitoring started');
+          // Don't start Flutter reminder timers — the extension handles reminders via Shield
+        } else if (authStatus == 'notDetermined') {
+          // Will ask on first visit to settings
+          print('[Main] ScreenTime not yet authorized');
+        } else {
+          print('[Main] ScreenTime authorization denied');
+        }
+      } catch (e) {
+        print('[Main] ScreenTime setup failed: $e');
+      }
     }
 
     // Listen for notification tap + overlay callbacks (both platforms)
@@ -169,16 +191,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             _iosBackgroundReminderScheduled = false;
             _onReminderCountdownEnded();
             _reminderManager?.startTimers();
+          } else if (type == 'combined') {
+            _showReminderOverlay(ReminderEvent(
+              type: ReminderType.eyeRestAndPosture,
+              countdownSeconds: 120,
+              meetingMode: store.config.meetingMode,
+            ));
           } else if (type == 'eye_rest') {
             _showReminderOverlay(ReminderEvent(
               type: ReminderType.eyeRest,
               countdownSeconds: 20,
-              meetingMode: store.config.meetingMode,
-            ));
-          } else if (type == 'posture_change') {
-            _showReminderOverlay(ReminderEvent(
-              type: ReminderType.postureChange,
-              countdownSeconds: 120,
               meetingMode: store.config.meetingMode,
             ));
           }
@@ -234,7 +256,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   bool _isAppInForeground = true;
-  bool _iosBackgroundReminderScheduled = false;
+  bool _iosScreenTimeActive = false; // true if ScreenTime monitoring is active on iOS
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -245,33 +267,36 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         _isAppInForeground = true;
         if (Platform.isIOS) {
-          _platform.invokeMethod('cancelBackgroundReminder');
-          if (_iosBackgroundReminderScheduled) {
-            // Background notification likely fired while app was suspended.
-            // Data was already recorded when user tapped notification.
-            // Just restart timers.
-            _iosBackgroundReminderScheduled = false;
+          if (!_iosScreenTimeActive) {
+            // ScreenTime not available — legacy mode with background reminders
+            _platform.invokeMethod('cancelBackgroundReminder');
+          }
+          // Clear any Shield overlays when user returns to app
+          if (_iosScreenTimeActive) {
+            ScreenTimeService.clearShields();
           }
         }
         if (!_sessionManager!.hasActiveSession) {
           _sessionManager!.startNewSession();
-          _reminderManager!.startTimers();
+          if (!_iosScreenTimeActive) {
+            _reminderManager!.startTimers(); // Only use Flutter timers if ScreenTime not active
+          }
           _p2pSync?.syncWithAll();
         }
         break;
       case AppLifecycleState.paused:
         _isAppInForeground = false;
-        // On Android: keep running — screen may still be on, user switched apps
-        // On iOS: pause session + schedule native notification for background reminder
         if (Platform.isIOS) {
           _sessionManager!.pauseCurrentSession(StopReason.appBackground);
-          // Schedule native notification so reminder fires even when app is suspended
-          final intervalMs = _reminderManager!.eyeRestIntervalMs;
-          _platform.invokeMethod('scheduleBackgroundReminder', {
-            'intervalSeconds': intervalMs ~/ 1000,
-          });
-          _iosBackgroundReminderScheduled = true;
-          _reminderManager!.stopTimers();
+          if (!_iosScreenTimeActive) {
+            // Legacy mode: schedule background notification for reminders
+            final intervalMs = _reminderManager!.eyeRestIntervalMs;
+            _platform.invokeMethod('scheduleBackgroundReminder', {
+              'intervalSeconds': intervalMs ~/ 1000,
+            });
+            _reminderManager!.stopTimers();
+          }
+          // With ScreenTime: extension handles reminders via Shield, no action needed
         }
         break;
       case AppLifecycleState.inactive:
@@ -297,21 +322,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
-  void _handleEyeRestReminder(ReminderEvent event) async {
+  void _handleReminderEvent(ReminderEvent event) async {
     if (await _isInCallOrMeeting()) {
-      _sessionManager?.pauseCurrentSession(StopReason.eyeRest);
+      final reason = event.isCombined ? StopReason.postureChange : StopReason.eyeRest;
+      _sessionManager?.pauseCurrentSession(reason);
       _sessionManager?.startNewSession();
-      _reminderManager?.onEyeRestDialogClosed();
-      return;
-    }
-    _showReminderOverlay(event);
-  }
-
-  void _handlePostureChangeReminder(ReminderEvent event) async {
-    if (await _isInCallOrMeeting()) {
-      _sessionManager?.pauseCurrentSession(StopReason.postureChange);
-      _sessionManager?.startNewSession();
-      _reminderManager?.onPostureDialogClosed();
+      _reminderManager?.onDialogClosed();
       return;
     }
     _showReminderOverlay(event);
@@ -328,7 +344,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   ///   3. Countdown ends → record data + restart screen timer + show close button
   ///   4. User closes → clean up reminder state
   void _showReminderOverlay(ReminderEvent event) {
-    final type = event.type == ReminderType.eyeRest ? 'eye_rest' : 'posture_change';
+    final type = event.isCombined ? 'combined' : (event.type == ReminderType.eyeRest ? 'eye_rest' : 'posture_change');
 
     // ── Step 1: Show platform UI ──
     if (Platform.isAndroid) {
@@ -369,6 +385,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void _showIOSDialog(ReminderEvent event) {
     if (_sessionManager == null || _reminderManager == null) return;
 
+    if (event.isCombined) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => CombinedReminderDialog(
+            countdownSeconds: event.countdownSeconds,
+            meetingMode: event.meetingMode,
+            onClosed: () {
+              _onReminderOverlayClosed();
+            },
+          ),
+        ),
+      );
+      _reminderCountdownTimer?.cancel();
+      _reminderCountdownTimer = Timer(
+        Duration(seconds: event.countdownSeconds),
+        () => _onReminderCountdownEnded(),
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -387,7 +424,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void _onReminderCountdownEnded() {
     if (_sessionManager == null || _reminderManager == null) return;
 
-    final reason = _reminderManager!.isEyeRestActive
+    final reason = _reminderManager!.isActive
         ? StopReason.eyeRest
         : StopReason.postureChange;
     _sessionManager!.pauseCurrentSession(reason);
@@ -401,11 +438,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _reminderCountdownTimer?.cancel();
     _reminderCountdownTimer = null;
 
-    if (_reminderManager!.isEyeRestActive) {
-      _reminderManager!.onEyeRestDialogClosed();
-    } else if (_reminderManager!.isPostureActive) {
-      _reminderManager!.onPostureDialogClosed();
-    }
+    _reminderManager!.onDialogClosed();
 
     if (_isScreenOn && !_sessionManager!.hasActiveSession) {
       // Don't start a new session if _onReminderCountdownEnded already did
@@ -597,47 +630,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _showOvertimeAlert(int totalSeconds, int plannedSeconds, {required bool isFirst}) {
     if (!mounted) return;
-    final exceeded = totalSeconds - plannedSeconds;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(isFirst
-            ? (AppStrings.lang.startsWith('zh') ? '⚠️ 屏幕用时已超计划' : '⚠️ Screen Time Exceeded')
-            : (AppStrings.lang.startsWith('zh') ? '⏰ 用时提醒' : '⏰ Time Reminder')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('📊 ${AppStrings.lang.startsWith('zh') ? '今日累计' : 'Today'}: ${AppStrings.formatDuration(totalSeconds)}'),
-            Text('📝 ${AppStrings.lang.startsWith('zh') ? '计划用时' : 'Planned'}: ${AppStrings.formatDuration(plannedSeconds)}'),
-            const SizedBox(height: 8),
-            Text(
-              '⚡ ${AppStrings.lang.startsWith('zh') ? '已超出' : 'Exceeded'}: ${AppStrings.formatDuration(exceeded)}',
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
-            ),
-            if (isFirst) ...[
-              const SizedBox(height: 12),
-              Text(
-                AppStrings.lang.startsWith('zh') ? '💡 建议适当休息，保护眼睛和身体' : '💡 Consider taking a break',
-                style: const TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          if (!isFirst)
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppStrings.lang.startsWith('zh') ? '休息一下' : 'Take a Break'),
-            ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(isFirst
-                ? (AppStrings.lang.startsWith('zh') ? '我知道了' : 'Got it')
-                : (AppStrings.lang.startsWith('zh') ? '继续使用' : 'Continue')),
-          ),
-        ],
-      ),
+    OvertimeAlertDialog.show(
+      context,
+      totalSeconds: totalSeconds,
+      plannedSeconds: plannedSeconds,
+      isFirst: isFirst,
+      onContinue: () {},
     );
   }
 
@@ -838,8 +836,8 @@ class _IOSReminderDialogState extends State<_IOSReminderDialog> {
                   const SizedBox(height: 8),
                   Text(
                     _countdownFinished
-                        ? (AppStrings.lang.startsWith('zh') ? '可以关闭了' : 'Ready to close')
-                        : (AppStrings.lang.startsWith('zh') ? '倒计时' : 'Countdown'),
+                        ? AppStrings.t('eye_rest.ready')
+                        : AppStrings.t('eye_rest.countdown'),
                     style: const TextStyle(color: Color(0xFF9E9E9E), fontSize: 13),
                   ),
 
@@ -864,7 +862,7 @@ class _IOSReminderDialogState extends State<_IOSReminderDialog> {
                     )
                   else
                     Text(
-                      AppStrings.lang.startsWith('zh') ? '请稍候...' : 'Please wait...',
+                      AppStrings.t('eye_rest.waiting'),
                       style: const TextStyle(color: Color(0xFF9E9E9E), fontSize: 12),
                     ),
                 ],

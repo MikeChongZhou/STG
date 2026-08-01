@@ -291,20 +291,23 @@ class LocalStore {
     final today = todayDate();
     final mk = _monthKey(today);
     final sessions = await loadSessions(mk);
-    int total = 0;
+
+    // Collect all sessions for today (including current active session)
+    final intervals = <List<DateTime>>[];
     for (final s in sessions) {
-      if (s.date == today && s.durationSeconds != null) {
-        total += s.durationSeconds!;
+      if (s.date == today && s.endTime != null) {
+        intervals.add([s.startTime, s.endTime!]);
       }
     }
-    // Add current session elapsed
+    // Include current active session
     if (_state.currentSessionId != null) {
       final current = sessions.where((s) => s.id == _state.currentSessionId).firstOrNull;
       if (current != null && current.date == today) {
-        total += DateTime.now().difference(current.startTime).inSeconds.clamp(0, 999999);
+        intervals.add([current.startTime, DateTime.now()]);
       }
     }
-    return total;
+
+    return _computeDedupedSeconds(intervals);
   }
 
   // ============================================================
@@ -322,7 +325,9 @@ class LocalStore {
     final daySessions = sessions.where((s) => s.date == date && s.endTime != null).toList();
     final summaries = await loadSummaries(mk);
 
-    final totalSeconds = daySessions.fold(0, (sum, s) => sum + (s.durationSeconds ?? 0));
+    // Deduplicate overlapping time intervals across devices
+    final intervals = daySessions.map((s) => [s.startTime, s.endTime!]).toList();
+    final totalSeconds = _computeDedupedSeconds(intervals);
     final devices = daySessions.map((s) => s.deviceId).toSet().toList();
     final sessionIds = daySessions.map((s) => s.id).toList();
     final startTimes = daySessions.map((s) => s.startTime).toList()..sort();
@@ -353,6 +358,51 @@ class LocalStore {
     final mk = _monthKey(date);
     final summaries = await loadSummaries(mk);
     return summaries.where((s) => s.date == date).firstOrNull;
+  }
+
+  /// Compute total unique seconds from a list of time intervals.
+  /// Merges overlapping intervals so time is never double-counted.
+  /// This handles the case where multiple devices record screen time
+  /// during the same period (e.g., phone + laptop both active 9:00-10:00).
+  int _computeDedupedSeconds(List<List<DateTime>> intervals) {
+    if (intervals.isEmpty) return 0;
+
+    // Sort by start time
+    intervals.sort((a, b) => a[0].compareTo(b[0]));
+
+    // Merge overlapping intervals
+    final merged = <List<DateTime>>[intervals[0]];
+    for (int i = 1; i < intervals.length; i++) {
+      final current = intervals[i];
+      final last = merged.last;
+
+      if (current[0].isBefore(last[1]) || current[0].isAtSameMomentAs(last[1])) {
+        // Overlapping or adjacent — extend the last interval
+        if (current[1].isAfter(last[1])) {
+          merged.last = [last[0], current[1]];
+        }
+      } else {
+        // No overlap — start a new interval
+        merged.add(current);
+      }
+    }
+
+    // Sum merged intervals
+    int total = 0;
+    for (final interval in merged) {
+      total += interval[1].difference(interval[0]).inSeconds.clamp(0, 999999);
+    }
+    return total;
+  }
+
+  /// Deduped seconds for a date range (for reports)
+  Future<int> getDedupedTotalSeconds(String startDate, String endDate) async {
+    final sessions = await querySessions(startDate: startDate, endDate: endDate);
+    final intervals = sessions
+        .where((s) => s.endTime != null)
+        .map((s) => [s.startTime, s.endTime!])
+        .toList();
+    return _computeDedupedSeconds(intervals);
   }
 
   // ============================================================
@@ -457,7 +507,7 @@ class LocalStore {
   }
 
   // ============================================================
-  // Sync helpers (expose raw read/write for SyncService)
+  // Sync helpers (expose raw read/write for P2P SyncService)
   // ============================================================
 
   Future<Map<String, dynamic>?> readRawJson(String relativePath) => _readJson(relativePath);

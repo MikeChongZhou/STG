@@ -136,7 +136,7 @@ class _EyeRestDialogState extends State<EyeRestDialog> with SingleTickerProvider
 
                   const SizedBox(height: 8),
                   Text(
-                    AppStrings.lang.startsWith('zh') ? '倒计时' : 'Countdown',
+                    AppStrings.t('eye_rest.countdown'),
                     style: const TextStyle(color: Color(0xFF9E9E9E), fontSize: 13),
                   ),
 
@@ -161,7 +161,7 @@ class _EyeRestDialogState extends State<EyeRestDialog> with SingleTickerProvider
                     )
                   else
                     Text(
-                      AppStrings.lang.startsWith('zh') ? '请稍候...' : 'Please wait...',
+                      AppStrings.t('eye_rest.waiting'),
                       style: const TextStyle(color: Color(0xFF9E9E9E), fontSize: 12),
                     ),
                 ],

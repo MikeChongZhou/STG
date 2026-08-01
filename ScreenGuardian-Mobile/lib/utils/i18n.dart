@@ -25,6 +25,8 @@ class AppStrings {
     'eye_rest.message': {'zh-CN': '请看向 20 英尺（约 6 米）外的物体，持续 20 秒', 'en': 'Look at something 20 feet (6m) away for 20 seconds'},
     'eye_rest.close': {'zh-CN': '关闭', 'en': 'Close'},
     'eye_rest.ready': {'zh-CN': '可以关闭了', 'en': 'Ready to close'},
+    'eye_rest.countdown': {'zh-CN': '倒计时', 'en': 'Countdown'},
+    'eye_rest.waiting': {'zh-CN': '请稍候...', 'en': 'Please wait...'},
 
     'posture.title': {'zh-CN': '姿势切换时间到了', 'en': 'Time to Change Posture'},
     'posture.message': {'zh-CN': '请切换您的坐姿/站姿', 'en': 'Please switch between sitting and standing'},
@@ -70,9 +72,30 @@ class AppStrings {
     'tracking.source': {'zh-CN': '数据来源', 'en': 'Source'},
 
     'about.developer': {'zh-CN': '开发者：TimberTrail', 'en': 'Developer: TimberTrail'},
-    'about.version': {'zh-CN': '版本：V$appVersion', 'en': 'Version: V$appVersion'},
+    'about.version': {'zh-CN': '版本：V{version}', 'en': 'Version: V{version}'},
     'about.license': {'zh-CN': '免费使用', 'en': 'Free to use'},
     'about.description': {'zh-CN': '跨平台屏幕用时管理工具，守护您的眼睛和健康', 'en': 'Cross-platform screen time manager'},
+    'about.p2p_title': {'zh-CN': '📡 隐私与同步说明', 'en': '📡 Privacy & Sync'},
+
+    'about.p2p_1': {'zh-CN': '1. 本应用使用 P2P 局域网同步设备数据并计算总屏幕用时。请在每台设备上设置相同的同步码。', 'en': '1. This app uses P2P to sync your devices and calculate your total screen time. Set the same sync code in every app, and avoid using the default code.'},
+    'about.p2p_2': {'zh-CN': '2. 本应用不使用云存储，所有数据仅保存在您的本地设备上。', 'en': '2. This app does not use cloud data. All data stays on your local devices.'},
+    'about.p2p_3': {'zh-CN': '3. 只有您批准的设备才能进行数据同步。', 'en': '3. Only devices you approve can sync.'},
+
+    'plan.title': {'zh-CN': '周计划管理', 'en': 'Weekly Plan'},
+    'plan.set': {'zh-CN': '设定计划', 'en': 'Set Plan'},
+    'plan.edit': {'zh-CN': '编辑计划', 'en': 'Edit Plan'},
+    'plan.daily_target': {'zh-CN': '每日计划用时', 'en': 'Daily Time Target'},
+    'plan.no_plan': {'zh-CN': '尚未设定本周计划', 'en': 'No plan set for this week'},
+    'plan.auto_fill': {'zh-CN': '根据上周数据自动填入', 'en': 'Auto-filled from last week'},
+    'plan.manual': {'zh-CN': '手动设定', 'en': 'Manually set'},
+    'plan.week_progress': {'zh-CN': '本周进度', 'en': 'Week Progress'},
+    'plan.week_total': {'zh-CN': '本周累计', 'en': 'Week Total'},
+    'plan.days_over': {'zh-CN': '超计划天数', 'en': 'Days Over Plan'},
+    'plan.quick_presets': {'zh-CN': '快捷设定', 'en': 'Quick Presets'},
+    'plan.enter_minutes': {'zh-CN': '手动输入（分钟）', 'en': 'Enter minutes'},
+    'plan.range_error': {'zh-CN': '计划用时需在 30-720 分钟之间', 'en': 'Plan must be between 30-720 minutes'},
+    'plan.saved': {'zh-CN': '计划已保存 ✓', 'en': 'Plan saved ✓'},
+    'plan.tips_title': {'zh-CN': '健康用屏建议', 'en': 'Healthy Screen Tips'},
 
     'overtime.title': {'zh-CN': '屏幕用时已超计划', 'en': 'Screen Time Exceeded Plan'},
     'overtime.acknowledge': {'zh-CN': '我知道了', 'en': 'Got it'},
@@ -80,6 +103,12 @@ class AppStrings {
 
     'weekly.title': {'zh-CN': '上周用时总结', 'en': 'Last Week Summary'},
     'weekly.confirm': {'zh-CN': '确认计划', 'en': 'Confirm Plan'},
+
+    'combined.title': {'zh-CN': '姿势切换 + 用眼休息', 'en': 'Posture Change + Eye Break'},
+    'combined.posture_msg': {'zh-CN': '请切换坐姿/站姿，适当活动身体', 'en': 'Switch sitting/standing position and move around'},
+    'combined.eye_msg': {'zh-CN': '请看向 20 英尺（约 6 米）外的物体，持续 20 秒', 'en': 'Look at something 20 feet (6m) away for 20 seconds'},
+    'combined.countdown_label': {'zh-CN': '请完成姿势切换和眼部休息', 'en': 'Complete posture change and eye rest'},
+    'combined.waiting': {'zh-CN': '请完成姿势切换和眼部休息...', 'en': 'Please complete posture change and eye rest...'},
 
     'stop_reason.eye_rest': {'zh-CN': '用眼休息', 'en': 'Eye Rest'},
     'stop_reason.posture_change': {'zh-CN': '姿势切换', 'en': 'Posture Change'},

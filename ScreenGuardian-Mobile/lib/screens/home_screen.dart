@@ -9,6 +9,7 @@ import '../utils/i18n.dart';
 import 'report_screen.dart';
 import 'settings_screen.dart';
 import 'tracking_screen.dart';
+import 'weekly_plan_screen.dart';
 import 'about_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -56,17 +57,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
               SizedBox(height: headerGap),
 
-              // ── Menu grid — 2×2, fills remaining space ──
+              // ── Menu grid — 2×3, fills remaining space ──
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    // 计算2行网格的理想宽高比
                     final gridH = constraints.maxHeight;
                     final gridW = constraints.maxWidth;
                     final spacing = gridGap;
-                    // 每个格子的高度 = (总高 - 间距) / 2
-                    final cellH = (gridH - spacing) / 2;
-                    // 每个格子的宽度 = (总宽 - 间距) / 2
+                    // 3 rows
+                    final cellH = (gridH - spacing * 2) / 3;
                     final cellW = (gridW - spacing) / 2;
                     final ratio = cellW / cellH;
 
@@ -81,6 +80,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => ReportScreen(onBeforeGenerate: widget.onBeforeReport),
                           ));
+                        }),
+                        _menuCard('🎯', AppStrings.lang.startsWith('zh') ? '周计划' : 'Weekly Plan', isSmall, () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const WeeklyPlanScreen()));
                         }),
                         _menuCard('⚙️', AppStrings.t('menu.settings'), isSmall, () {
                           Navigator.push(context, MaterialPageRoute(

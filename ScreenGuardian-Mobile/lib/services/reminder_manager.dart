@@ -1,10 +1,18 @@
-/// Reminder Manager - Eye Rest and Posture Change reminders
-/// Loads settings from LocalStore for persistence
+/// Reminder Manager - Unified eye rest + posture change reminders
+///
+/// Design:
+///   - Eye rest timer: fires every 20 minutes (configurable)
+///   - Posture change: fires every 40 minutes (= 2× eye rest interval)
+///   - When posture fires, show a COMBINED dialog: change posture + look 20ft away
+///   - No separate posture timer — it piggybacks on the eye rest cycle
 
 import 'dart:async';
 import 'local_store.dart';
 
-enum ReminderType { eyeRest, postureChange }
+enum ReminderType {
+  eyeRest,            // 20 min: just eye rest
+  eyeRestAndPosture,  // 40 min: posture change + eye rest combined
+}
 
 class ReminderEvent {
   final ReminderType type;
@@ -16,18 +24,18 @@ class ReminderEvent {
     required this.countdownSeconds,
     required this.meetingMode,
   });
+
+  bool get isCombined => type == ReminderType.eyeRestAndPosture;
 }
 
 class ReminderManager {
   final LocalStore _store;
 
-  Timer? _eyeRestTimer;
-  Timer? _postureTimer;
-  bool _eyeRestActive = false;
-  bool _postureActive = false;
+  Timer? _timer;
+  bool _active = false;
+  int _triggerCount = 0; // counts eye rest triggers, every 2nd = posture
 
   int _eyeRestIntervalMs;
-  int _postureIntervalMs;
   bool _meetingMode;
   bool _eyeRestEnabled;
   bool _postureEnabled;
@@ -38,7 +46,6 @@ class ReminderManager {
   ReminderManager({required LocalStore store})
       : _store = store,
         _eyeRestIntervalMs = 20 * 60 * 1000, // default 20 min
-        _postureIntervalMs = store.config.postureIntervalMinutes * 60 * 1000,
         _meetingMode = store.config.meetingMode,
         _eyeRestEnabled = store.config.eyeRestEnabled,
         _postureEnabled = store.config.postureEnabled;
@@ -46,72 +53,61 @@ class ReminderManager {
   /// Reload settings from store (call after settings change)
   void reloadSettings() {
     final config = _store.config;
-    _postureIntervalMs = config.postureIntervalMinutes * 60 * 1000;
     _meetingMode = config.meetingMode;
     _eyeRestEnabled = config.eyeRestEnabled;
     _postureEnabled = config.postureEnabled;
-    resetTimers();
+    resetTimer();
   }
 
   void startTimers() {
-    if (_eyeRestEnabled) _startEyeRestTimer();
-    if (_postureEnabled) _startPostureTimer();
+    if (_eyeRestEnabled) _startTimer();
   }
 
   void stopTimers() {
-    _eyeRestTimer?.cancel();
-    _postureTimer?.cancel();
-    _eyeRestActive = false;
-    _postureActive = false;
+    _timer?.cancel();
+    _timer = null;
+    _active = false;
   }
 
-  void resetTimers() {
+  void resetTimer() {
     stopTimers();
     startTimers();
   }
 
-  void _startEyeRestTimer() {
-    _eyeRestTimer?.cancel();
-    _eyeRestTimer = Timer(Duration(milliseconds: _eyeRestIntervalMs), () {
-      if (hasActiveReminder) return; // 另一个提醒正在显示，跳过这次
-      _eyeRestActive = true;
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: _eyeRestIntervalMs), () {
+      if (_active) return;
+      _active = true;
+      _triggerCount++;
+
+      // Every 2nd trigger → combined posture + eye rest
+      final isPostureCycle = _postureEnabled && (_triggerCount % 2 == 0);
+
       _controller.add(ReminderEvent(
-        type: ReminderType.eyeRest,
-        countdownSeconds: 20,
+        type: isPostureCycle ? ReminderType.eyeRestAndPosture : ReminderType.eyeRest,
+        countdownSeconds: isPostureCycle ? 120 : 20, // posture: 2min, eye rest: 20s
         meetingMode: _meetingMode,
       ));
     });
   }
 
-  void _startPostureTimer() {
-    _postureTimer?.cancel();
-    _postureTimer = Timer(Duration(milliseconds: _postureIntervalMs), () {
-      if (hasActiveReminder) return; // 另一个提醒正在显示，跳过这次
-      _postureActive = true;
-      _controller.add(ReminderEvent(
-        type: ReminderType.postureChange,
-        countdownSeconds: 120,
-        meetingMode: _meetingMode,
-      ));
-    });
+  void onDialogClosed() {
+    _active = false;
+    _startTimer();
   }
 
-  void onEyeRestDialogClosed() {
-    _eyeRestActive = false;
-    _startEyeRestTimer(); // 只重启眼部休息定时器
-  }
+  // Legacy compatibility
+  void onEyeRestDialogClosed() => onDialogClosed();
+  void onPostureDialogClosed() => onDialogClosed();
 
-  void onPostureDialogClosed() {
-    _postureActive = false;
-    _startPostureTimer(); // 只重启姿势定时器
-  }
-
-  bool get isEyeRestActive => _eyeRestActive;
-  bool get isPostureActive => _postureActive;
-  bool get hasActiveReminder => _eyeRestActive || _postureActive;
+  bool get isActive => _active;
+  bool get isEyeRestActive => _active;
+  bool get isPostureActive => false; // no separate posture state
+  bool get hasActiveReminder => _active;
 
   int get eyeRestIntervalMs => _eyeRestIntervalMs;
-  int get postureIntervalMs => _postureIntervalMs;
+  int get postureIntervalMs => _eyeRestIntervalMs * 2; // derived
   bool get meetingMode => _meetingMode;
   bool get eyeRestEnabled => _eyeRestEnabled;
   bool get postureEnabled => _postureEnabled;

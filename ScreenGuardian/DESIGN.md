@@ -1,9 +1,10 @@
-# ScreenGuardian — 详细设计文档（V1.0.6）
+# ScreenGuardian — 详细设计文档（V1.0.7）
 
 > **产品名称：** ScreenGuardian（屏幕守护者）
-> **版本：** V1.06
+> **版本：** V1.0.7
 > **开发者：** TimberTrail
 > **设计日期：** 2026-07-09
+> **更新日期：** 2026-08-01
 > **授权：** 免费使用
 
 ---
@@ -25,13 +26,13 @@
   - [2.7 LLMRankingRecord 实体详细定义](#27-llmrankingrecord-实体详细定义)
   - [2.8 SyncMeta 实体详细定义](#28-syncmeta-实体详细定义)
   - [2.9 本地存储方案](#29-本地存储方案)
-  - [2.10 网盘同步文件格式与目录结构](#210-网盘同步文件格式与目录结构)
+  - [~~2.10 网盘同步文件格式与目录结构~~（已移除）](#210-网盘同步文件格式与目录结构已移除)
 - [第三部分：核心模块详细设计](#第三部分核心模块详细设计)
   - [3.1 模块 M1 — 系统启动与常驻](#31-模块-m1--系统启动与常驻)
   - [3.2 模块 M2 — 屏幕状态检测](#32-模块-m2--屏幕状态检测)
   - [3.3 模块 M3 — 屏幕用时记录引擎](#33-模块-m3--屏幕用时记录引擎)
   - [3.4 模块 M4 — 用眼休息提醒（20-20-20）](#34-模块-m4--用眼休息提醒20-20-20)
-  - [3.5 模块 M5 — 姿势切换提醒](#35-模块-m5--姿势切换提醒)
+  - [~~3.5 模块 M5 — 姿势切换提醒~~（已合并至 M4）](#35-模块-m5--姿势切换提醒已合并至-m4)
   - [3.6 模块 M6 — 菜单系统](#36-模块-m6--菜单系统)
   - [3.7 模块 M7 — 报告引擎](#37-模块-m7--报告引擎)
   - [3.8 模块 M8 — 设置管理](#38-模块-m8--设置管理)
@@ -69,7 +70,7 @@ ScreenGuardian 是一款跨平台屏幕用时管理工具，覆盖 Windows PC、
 | **跨设备一致性** | 所有设备共享同一份数据，同步延迟 < 30 秒 |
 | **低资源占用** | 后台驻留时 CPU < 1%，内存 < 100MB（桌面）/ 50MB（移动） |
 | **无感运行** | 用户无需主动操作，自动记录、自动提醒 |
-| **隐私安全** | 所有数据存储在用户本地/用户网盘，不上传任何第三方服务器 |
+| **隐私安全** | 所有数据仅存储在用户本地设备，通过 P2P 局域网加密同步，不使用任何云服务、不上传任何第三方服务器 |
 
 ---
 
@@ -85,10 +86,10 @@ ScreenGuardian 是一款跨平台屏幕用时管理工具，覆盖 Windows PC、
 | **原生能力** | node-ffi / native addon | node-ffi / native addon | Platform Channel | Platform Channel |
 | **打包** | electron-builder (.exe/.msi) | electron-builder (.dmg) | Flutter build (.apk/.aab) | Flutter build (.ipa) |
 | **自启动** | 注册表 Run Key | Login Items / launchd | Boot Broadcast + Service | 无（用户手动） |
-| **屏幕检测** | WM_POWERBROADCAST + SessionSwitch | NSWorkspace + CGSession | BroadcastReceiver | NotificationCenter |
+| **屏幕检测** | WM_POWERBROADCAST + SessionSwitch | NSWorkspace + CGSession | BroadcastReceiver | **ScreenTime API (DeviceActivityMonitor)** |
 | **托盘/驻留** | 系统托盘（Tray） | 菜单栏（NSStatusItem） | Foreground Service + 通知 | Live Activity |
 
-需要研究iOS到底是不是可以自启动？如果不可以，用户启动该app后，是不是可以不被杀掉？
+> **V1.0.7 变更**：iOS 改用 ScreenTime API（DeviceActivityMonitor Extension），由系统管理扩展生命周期，无需自启动，不会被杀。需要 Family Controls 授权。
 
 ### 为什么不统一框架
 
@@ -99,49 +100,49 @@ ScreenGuardian 是一款跨平台屏幕用时管理工具，覆盖 Windows PC、
 ## 1.3 系统总体架构图
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        用户设备层                                │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ Windows  │ │  macOS   │ │ Android  │ │   iOS    │           │
-│  │  PC      │ │ MacBook  │ │ 手机/Pad │ │ iPhone/  │           │
-│  │          │ │          │ │          │ │ iPad     │           │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘           │
-│       │             │            │             │                │
-│  ┌────▼─────────────▼──┐   ┌────▼─────────────▼──┐             │
-│  │   Electron 桌面端    │   │   Flutter 移动端     │             │
-│  │ ┌─────────────────┐ │   │ ┌─────────────────┐ │             │
-│  │ │   UI 渲染层     │ │   │ │  Flutter Widget │ │             │
-│  │ │ (HTML/CSS/JS)   │ │   │ │   (Dart UI)     │ │             │
-│  │ └────────┬────────┘ │   │ └────────┬────────┘ │             │
-│  │ ┌────────▼────────┐ │   │ ┌────────▼────────┐ │             │
-│  │ │  业务逻辑层     │ │   │ │  业务逻辑层     │ │             │
-│  │ │  (TypeScript)   │ │   │ │   (Dart)        │ │             │
-│  │ │ ┌─────────────┐ │ │   │ │ ┌─────────────┐ │ │             │
-│  │ │ │SessionMgr   │ │ │   │ │ │SessionMgr   │ │ │             │
-│  │ │ │SyncService   │ │ │   │ │ │SyncService   │ │ │             │
-│  │ │ │ReportEngine  │ │ │   │ │ │ReportEngine  │ │ │             │
-│  │ │ │ReminderMgr   │ │ │   │ │ │ReminderMgr   │ │ │             │
-│  │ │ └─────────────┘ │ │   │ │ └─────────────┘ │ │             │
-│  │ └────────┬────────┘ │   │ └────────┬────────┘ │             │
-│  │ ┌────────▼────────┐ │   │ ┌────────▼────────┐ │             │
-│  │ │  平台适配层     │ │   │ │  平台适配层     │ │             │
-│  │ │ (Native Module) │ │   │ │(Platform Channel│ │             │
-│  │ │ ┌────┐ ┌────┐  │ │   │ │ ┌────┐ ┌────┐  │ │             │
-│  │ │ │Win │ │Mac │  │ │   │ │ │And │ │iOS │  │ │             │
-│  │ │ └────┘ └────┘  │ │   │ │ └────┘ └────┘  │ │             │
-│  │ └─────────────────┘ │   │ └─────────────────┘ │             │
-│  └──────────────────────┘   └──────────────────────┘             │
-│           │                            │                         │
-│           └──────────┬─────────────────┘                         │
-│               ┌──────▼──────┐                                    │
-│               │  本地存储    │                                    │
-│               │ (JSON 文件)  │                                    │
-│               └──────┬──────┘                                    │
-│               ┌──────▼──────┐                                    │
-│               │  网盘同步    │                                    │
-│               │ (文件监听)   │                                    │
-│               └─────────────┘                                    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          用户设备层                                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                │
+│  │ Windows  │ │  macOS   │ │ Android  │ │   iOS    │                │
+│  │  PC      │ │ MacBook  │ │ 手机/Pad │ │ iPhone/  │                │
+│  │          │ │          │ │          │ │ iPad     │                │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘                │
+│       │             │            │             │                     │
+│  ┌────▼─────────────▼──┐   ┌────▼─────────────▼──┐                  │
+│  │   Electron 桌面端    │   │   Flutter 移动端     │                  │
+│  │ ┌─────────────────┐ │   │ ┌─────────────────┐ │                  │
+│  │ │   UI 渲染层     │ │   │ │  Flutter Widget │ │                  │
+│  │ │ (HTML/CSS/JS)   │ │   │ │   (Dart UI)     │ │                  │
+│  │ └────────┬────────┘ │   │ └────────┬────────┘ │                  │
+│  │ ┌────────▼────────┐ │   │ ┌────────▼────────┐ │                  │
+│  │ │  业务逻辑层     │ │   │ │  业务逻辑层     │ │                  │
+│  │ │  (TypeScript)   │ │   │ │   (Dart)        │ │                  │
+│  │ │ ┌─────────────┐ │ │   │ │ ┌─────────────┐ │ │                  │
+│  │ │ │SessionMgr   │ │ │   │ │ │SessionMgr   │ │ │                  │
+│  │ │ │P2PSync      │ │ │   │ │ │P2PSync      │ │ │                  │
+│  │ │ │ReportEngine  │ │ │   │ │ │ReportEngine  │ │ │                  │
+│  │ │ │ReminderMgr   │ │ │   │ │ │ReminderMgr   │ │ │                  │
+│  │ │ └─────────────┘ │ │   │ │ └─────────────┘ │ │                  │
+│  │ └────────┬────────┘ │   │ └────────┬────────┘ │                  │
+│  │ ┌────────▼────────┐ │   │ ┌────────▼────────┐ │                  │
+│  │ │  平台适配层     │ │   │ │  平台适配层     │ │                  │
+│  │ │ (Native Module) │ │   │ │(Platform Channel│ │                  │
+│  │ │ ┌────┐ ┌────┐  │ │   │ │ ┌────┐ ┌────┐  │ │                  │
+│  │ │ │Win │ │Mac │  │ │   │ │ │And │ │iOS │  │ │                  │
+│  │ │ └────┘ └────┘  │ │   │ │ └────┘ └────┘  │ │                  │
+│  │ └─────────────────┘ │   │ └─────────────────┘ │                  │
+│  └──────────────────────┘   └──────────────────────┘                  │
+│           │                            │                              │
+│           └──────────┬─────────────────┘                              │
+│               ┌──────▼──────┐                                         │
+│               │  本地存储    │                                         │
+│               │ (JSON 文件)  │                                         │
+│               └──────┬──────┘                                         │
+│               ┌──────▼──────┐                                         │
+│               │  P2P 同步   │  ← mDNS 发现 + HTTP 交换 + 加密         │
+│               │(局域网直连)  │  ← 无云服务、无第三方服务器               │
+│               └─────────────┘                                         │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -155,12 +156,11 @@ ScreenGuardian 是一款跨平台屏幕用时管理工具，覆盖 Windows PC、
 | M1 | 系统启动与常驻 | P0 | — |
 | M2 | 屏幕状态检测 | P0 | M1 |
 | M3 | 屏幕用时记录引擎 | P0 | M2 |
-| M4 | 用眼休息提醒 | P0 | M3 |
-| M5 | 姿势切换提醒 | P0 | M3 |
+| M4 | 用眼休息 + 姿势切换提醒（合并） | P0 | M3 |
 | M6 | 菜单系统 | P0 | M1 |
 | M7 | 报告引擎 | P1 | M3 |
 | M8 | 设置管理 | P0 | — |
-| M9 | 多设备数据同步 | P1 | M3, M8 |
+| M9 | 多设备数据同步（P2P mDNS） | P1 | M3, M8 |
 | M10 | 每周用时总结 | P1 | M3, M9 |
 | M11 | 超时提醒 | P1 | M3, M10 |
 | M12 | LLM Ranking 跟踪 | P2 | M8, M9 |
@@ -168,17 +168,16 @@ ScreenGuardian 是一款跨平台屏幕用时管理工具，覆盖 Windows PC、
 ### 依赖关系图
 
 ```
-M1 (启动常驻) ──→ M2 (屏幕检测) ──→ M3 (记录引擎) ──→ M4 (用眼休息)
-                    │                   │                M5 (姿势切换)
+M1 (启动常驻) ──→ M2 (屏幕检测) ──→ M3 (记录引擎) ──→ M4 (用眼休息 + 姿势切换)
                     │                   │                M7 (报告引擎)
                     │                   │                M11 (超时提醒)
                     │                   │
-                    │                   └──→ M9 (数据同步) ──→ M10 (周总结)
-                    │                                          M12 (LLM Ranking)
+                    │                   └──→ M9 (P2P 同步) ──→ M10 (周总结)
+                    │                                       M12 (LLM Ranking)
                     │
                     └──→ M6 (菜单系统)
 
-M8 (设置管理) ──→ M4, M5, M9, M12 (各模块读取设置)
+M8 (设置管理) ──→ M4, M9, M12 (各模块读取设置)
 ```
 
 ---
@@ -293,11 +292,33 @@ M8 (设置管理) ──→ M4, M5, M9, M12 (各模块读取设置)
 ### 聚合计算规则
 
 ```
-totalSeconds = SUM(session.durationSeconds) WHERE session.date = this.date AND session.endTime != null
+// 1. 收集当日所有已完成 session 的时间段 [(startTime, endTime), ...]
+// 2. 对时间段做区间合并去重（合并重叠时段，避免多设备同时使用时重复统计）
+// 3. 计算合并后的总秒数
+totalSeconds = MERGED_DURATION(sessions WHERE date=this.date AND endTime!=null)
+
 sessionCount = COUNT(sessions) WHERE session.date = this.date
 devices = DISTINCT(session.deviceId) WHERE session.date = this.date
 firstSessionStart = MIN(session.startTime) WHERE session.date = this.date
 lastSessionEnd = MAX(session.endTime) WHERE session.date = this.date AND session.endTime != null
+```
+
+### 跨设备时间去重算法
+
+当多台设备同时使用时（如手机 9:00-10:00 + 电脑 9:00-10:00），`totalSeconds` 应为 1 小时而非 2 小时。
+
+算法：区间合并（Interval Merge）
+
+```
+输入: [(9:00, 10:00), (9:00, 10:00), (10:30, 11:00), (10:45, 11:30)]
+         ↑ 手机       ↑ 电脑       ↑ 手机        ↑ 电脑
+
+1. 按 startTime 排序
+2. 遍历区间，若当前 start <= 上一个 end，则合并（取 max end）
+3. 否则开启新区间
+
+输出: [(9:00, 10:00), (10:30, 11:30)]
+总用时: 1h + 1h = 2h（而非 3.25h）
 ```
 
 ### JSON 示例
@@ -387,7 +408,7 @@ lastSessionEnd = MAX(session.endTime) WHERE session.date = this.date AND session
   "registeredAt": "2026-07-01T08:00:00.000+08:00",
   "lastSyncAt": "2026-07-01T18:00:00.000+08:00",
   "lastActiveAt": "2026-07-01T18:45:00.000+08:00",
-  "appVersion": "1.0.6"
+  "appVersion": "1.0.7"
 }
 ```
 
@@ -402,16 +423,18 @@ lastSessionEnd = MAX(session.endTime) WHERE session.date = this.date AND session
 | 字段名 | 类型 | 必填 | 默认值 | 约束 | 说明 |
 |--------|------|------|--------|------|------|
 | `language` | enum | ✅ | `system` | `zh-CN` / `en` / `system` | 界面语言 |
-| `postureIntervalMinutes` | integer | ✅ | 30 | 30~60，步长 1 | 姿势切换间隔（分钟） |
 | `trackingTargets` | string[] | ✅ | `["llm_ranking"]` | 数组，目前仅支持 `llm_ranking` | 跟踪对象列表 |
 | `meetingMode` | boolean | ✅ | false | — | 会议模式开关 |
-| `syncFolderPath` | string | ❌ | null | 合法文件系统路径 |
 | `deviceName` | string | ❌ | null | 1~50 字符 | 当前设备名称（覆盖默认值） |
-| `eyeRestEnabled` | boolean | ✅ | true | — | 用眼休息提醒开关 |
-| `postureEnabled` | boolean | ✅ | true | — | 姿势切换提醒开关 |
+| `eyeRestEnabled` | boolean | ✅ | true | — | 用眼休息提醒开关（每 20 分钟） |
+| `postureEnabled` | boolean | ✅ | true | — | 姿势切换提醒开关（每 40 分钟，与用眼休息合并） |
 | `overtimeEnabled` | boolean | ✅ | true | — | 超时提醒开关 |
 | `updatedAt` | ISO 8601 | ✅ | 自动更新 | — | 最后更新时间 |
 | `updatedBy` | string | ✅ | 自动填充 | deviceId | 最后更新设备 |
+
+> **V1.0.7 变更**：
+> - 移除 `postureIntervalMinutes`：姿势切换间隔现在固定为用眼休息间隔的 2 倍（默认 40 分钟），无需用户配置。
+> - 移除 `syncFolderPath`：网盘同步方案已移除，改用 P2P 局域网同步。
 
 ### language 枚举
 
@@ -426,10 +449,8 @@ lastSessionEnd = MAX(session.endTime) WHERE session.date = this.date AND session
 ```json
 {
   "language": "zh-CN",
-  "postureIntervalMinutes": 30,
   "trackingTargets": ["llm_ranking"],
   "meetingMode": false,
-  "syncFolderPath": "/Users/zhang/OneDrive/ScreenGuardian",
   "deviceName": "张三的MacBook",
   "eyeRestEnabled": true,
   "postureEnabled": true,
@@ -600,43 +621,11 @@ ScreenGuardian/
 
 ---
 
-## 2.10 网盘同步文件格式与目录结构
+## ~~2.10 网盘同步文件格式与目录结构~~（已移除）
 
-### 目录结构
-
-```
-ScreenGuardian-Sync/                    # 用户选择的网盘同步文件夹
-├── config.json                         # 全局配置
-├── devices/
-│   ├── dev-001-windows-xyz.json        # 各设备注册信息
-│   ├── dev-002-macos-abc.json
-│   └── ...
-├── sessions/
-│   ├── 2026-06.json                    # 按月归档，数组格式
-│   └── 2026-07.json
-├── summaries/
-│   ├── 2026-06.json
-│   └── 2026-07.json
-├── plans/
-│   └── weekly.json
-├── tracking/
-│   └── llm-ranking/
-│       ├── 2026-W27.json
-│       └── 2026-W28.json
-├── weekly-triggers/
-│   └── 2026-W27.json                   # 周总结触发记录
-└── sync-meta.json                      # 同步元数据
-```
-
-### 文件读写规则
-
-| 规则 | 说明 |
-|------|------|
-| **原子写入** | 写入时先写临时文件 `{filename}.tmp`，再 rename 覆盖，防止写入中断导致文件损坏 |
-| **追加合并** | Session 记录以追加方式合并，不覆盖已有记录 |
-| **冲突解决** | 以 `id` 去重，以 `updatedAt` 取最新版本 |
-| **锁定机制** | 使用 `{filename}.lock` 文件标记正在写入，其他设备等待锁释放 |
-| **文件大小限制** | 单个 JSON 文件不超过 10MB，超过时按月拆分 |
+> **V1.0.7 变更**：网盘同步方案已完全移除。改用 P2P 局域网同步（mDNS 发现 + HTTP 数据交换），详见 [3.9 模块 M9](#39-模块-m9--多设备数据同步p2p-mdns)。
+> 
+> 所有数据仅存储在本地设备上，不依赖任何云服务。
 
 ---
 
@@ -681,7 +670,7 @@ ScreenGuardian-Sync/                    # 用户选择的网盘同步文件夹
   - macOS：
     1. 创建主窗口但不显示
     2. 创建 NSStatusItem（菜单栏图标）
-    3. 菜单栏图标 tooltip："ScreenGuarding V1.0.6"
+    3. 菜单栏图标 tooltip："ScreenGuardian V{version}"（从 package.json 读取）
     4. 设置 activationPolicy 为 accessory（不在 Dock 显示）
   - Android：
     1. 启动 Foreground Service
@@ -907,40 +896,75 @@ ScreenEvent {
   // Android 待机 = SLEEP（屏幕关闭即待机）
 ```
 
-#### iOS
+#### iOS（V1.0.7 — ScreenTime API）
+
+> **V1.0.7 重大变更**：iOS 完全改用 ScreenTime API，不再依赖 AppLifecycleState 推断。
 
 ```
+架构：
+  ┌─────────────────────────────────────────────────┐
+  │  DeviceActivityMonitor Extension（独立进程）      │
+  │  - 由 iOS 系统管理，不会被杀                      │
+  │  - 监听设备活动，达到阈值时触发                   │
+  │  - 通过 ManagedSettings 显示 Shield 全屏遮罩      │
+  │  - 通过 App Group UserDefaults 与主 App 通信      │
+  └─────────────────────────────────────────────────┘
+           ↑ DeviceActivitySchedule 注册阈值
+           │
+  ┌─────────────────────────────────────────────────┐
+  │  主 App（Flutter）                                │
+  │  - 请求 Family Controls 授权                     │
+  │  - 注册 DeviceActivitySchedule（20min/40min）     │
+  │  - 读取 ScreenTime 使用报告                       │
+  │  - 不负责实时提醒（扩展负责）                      │
+  └─────────────────────────────────────────────────┘
+
 事件源：
-  1. NotificationCenter
-     - UIApplication.willResignActiveNotification → LOCKED/切换到后台
-     - UIApplication.didBecomeActiveNotification → ACTIVE
-     - UIApplication.didEnterBackgroundNotification → SLEEP（进入后台）
-     - UIApplication.willEnterForegroundNotification → ACTIVE
-  2. 屏幕锁定
-     - 不可直接检测，通过 willResignActive 推断
-     - 区分方式：如果同时收到 willResignActive + didEnterBackground → 可能是锁屏或切后台
+  1. DeviceActivityMonitor Extension
+     - intervalDidStart → 达到阈值，显示 Shield 遮罩
+     - intervalDidEnd → 移除遮罩，注册下一轮阈值
+  2. 主 App AppLifecycleState（辅助）
+     - resumed → 清除 Shield 遮罩，恢复 session
+     - paused → 暂停 session
 
 检测流程：
-  ON willResignActiveNotification:
-    // 暂停计时，但不立即标记为 LOCKED
-    // 等待后续事件确认
-    pendingInactive = true
-    pendingInactiveTimestamp = now
+  启动时：
+    1. 检查 Family Controls 授权状态
+    2. 如果已授权 → 注册 DeviceActivitySchedule
+    3. 如果未授权 → 引导用户到设置页授权
 
-  ON didBecomeActiveNotification:
-    IF pendingInactive:
-      pendingInactive = false
-      emit(SCREEN_EVENT(ACTIVE))
+  20 分钟阈值触发（Extension 进程）：
+    intervalDidStart("eyeRestReminder"):
+      → ManagedSettings.shield = 全屏遮罩
+        header: "👁️ 用眼休息"
+        subtitle: "看 20 英尺外 20 秒"
+      → 通过 App Group 记录事件
 
-  ON didEnterBackgroundNotification:
-    IF pendingInactive:
-      pendingInactive = false
-      // 从活跃→后台：可能是锁屏或切到其他 App
-      // 统一视为 SLEEP（停止计时）
-      emit(SCREEN_EVENT(SLEEP))
+  40 分钟阈值触发（Extension 进程）：
+    intervalDidStart("combinedReminder"):
+      → ManagedSettings.shield = 全屏遮罩
+        header: "🧘 + 👁️ 姿势切换 + 用眼休息"
+        subtitle: "切换坐姿/站姿，并看向 20 英尺外 20 秒"
 
-  // iOS 无屏保概念
-  // 锁屏 = 屏幕关闭 = 待机 = 统一归类为 SLEEP
+  遮罩移除（Extension 进程）：
+    intervalDidEnd():
+      → ManagedSettings.clearAllSettings()（移除遮罩）
+      → 递增 triggerCount
+      → 注册下一个阈值（20min 或 40min 交替）
+
+Shield 遮罩特性：
+  - iOS 系统级 UI，与来电界面同级别
+  - 覆盖所有应用，用户无法绕过
+  - 不需要 App 在前台
+  - Extension 由系统管理，不会被杀进程
+  - 需要 Family Controls 授权（家长监控权限）
+
+App Group 共享数据：
+  group.com.timbertrail.screenguardian
+  - triggerCount: Int（触发计数器）
+  - reminderEvents: [[String:String]]（事件日志）
+  - extensionLogs: [String]（调试日志）
+  - todayUsageSeconds: Int（当日用时）
 ```
 
 ### 3.2.5 防抖与去抖
@@ -1191,11 +1215,21 @@ END_SESSION(session, reason):
 
 ---
 
-## 3.4 模块 M4 — 用眼休息提醒（20-20-20）
+## 3.4 模块 M4 — 用眼休息 + 姿势切换提醒（合并）
+
+> **V1.0.7 变更**：M4 和 M5 合并为统一的提醒模块。不再使用两个独立定时器。
+>
+> **合并逻辑**：
+> - 单一定时器，每 20 分钟触发一次
+> - **第 1 次**（20 分钟）→ 仅用眼休息：看 20ft 外 20 秒，倒计时 20 秒
+> - **第 2 次**（40 分钟）→ 合并提醒：切换姿势 + 看 20ft 外 20 秒，倒计时 2 分钟
+> - **第 3 次**（60 分钟）→ 仅用眼休息
+> - **第 4 次**（80 分钟）→ 合并提醒
+> - 如此循环...
 
 ### 3.4.1 功能描述
 
-屏幕每持续打开 20 分钟，弹出用眼休息提示框。倒计时 20 秒期间无关闭按钮，倒计时结束后出现关闭按钮。会议模式下关闭按钮始终可见。
+单一定时器每 20 分钟触发，内部维护触发计数器 `_triggerCount`。每 2 次触发（= 40 分钟）包含姿势切换提醒，弹出合并提醒窗口。会议模式下关闭按钮始终可见。
 
 ### 3.4.2 接口定义
 
@@ -1368,11 +1402,17 @@ showEyeRestDialog():
 
 ---
 
-## 3.5 模块 M5 — 姿势切换提醒
+## ~~3.5 模块 M5 — 姿势切换提醒~~（已合并至 M4）
 
-### 3.5.1 功能描述
+> **V1.0.7 变更**：M5 已完全合并至 M4。姿势切换提醒现在是 M4 合并提醒的一部分，每 40 分钟（= 2 × 20 分钟用眼休息周期）触发一次合并弹窗，同时包含姿势切换和用眼休息提示。
+>
+> 独立的 `postureIntervalMinutes` 配置项已移除。姿势切换间隔固定为用眼休息间隔的 2 倍。
+>
+> 以下为历史设计保留，供参考。
 
-每 configurableInterval 分钟（默认 30，可配置 30~60），弹出姿势切换提示框。等待 2 分钟用户确认后才出现关闭按钮。会议模式下关闭按钮始终可见。
+### 3.5.1 历史功能描述
+
+每 configurableInterval 分钟（默认 30，可配置 30~60），弹出姿势切换提示框。等待 2 分钟用户确认后才出现关闭按钮。
 
 ### 3.5.2 接口定义
 
@@ -1881,154 +1921,126 @@ ON sync_timer_fired:
 
 ---
 
-## 3.9 模块 M9 — 多设备数据同步
+## 3.9 模块 M9 — 多设备数据同步（P2P mDNS）
+
+> **V1.0.7 变更**：完全移除网盘同步方案，改用 P2P 局域网同步。所有数据仅存储在本地设备上，不依赖任何云服务。
 
 ### 3.9.1 功能描述
 
-通过用户选择的网盘文件夹，实现多设备数据同步。同步内容包括 Session 记录、DailySummary、配置、周计划、跟踪数据。
+通过 mDNS（组播 DNS，与 Apple Bonjour 同协议）在局域网内自动发现其他 ScreenGuardian 设备，然后通过 HTTP REST API 直接交换数据。
 
-### 3.9.2 接口定义
+**核心特性**：
+- **零配置发现**：设备上电即自动广播 `_screenguardian._tcp` 服务，无需手动输入 IP
+- **用户审批**：发现的设备默认为待确认状态，用户必须在设置界面手动批准
+- **配对码加密**：用户设置配对码后，所有同步数据使用 AES 加密 + HMAC 完整性校验
+- **时间段去重**：跨设备重叠时段不重复统计（详见 2.3 节跨设备时间去重算法）
 
-#### I9.1 — 初始化同步服务
+### 3.9.2 mDNS 服务注册与发现
 
 ```
-接口名称：SyncService.init(syncFolderPath: string)
-参数：syncFolderPath: 网盘同步文件夹路径
-返回值：boolean（路径是否可用）
+服务类型: _screenguardian._tcp.local
+端口: 19090
+
+注册（广播）:
+  每 30 秒发送 mDNS 响应包，包含：
+    PTR 记录: _screenguardian._tcp.local → <instance>
+    SRV 记录: <instance> → port 19090
+    TXT 记录: id=<deviceId>, name=<deviceName>, platform=<platform>, version=<version>
+
+发现（监听）:
+  监听 224.0.0.251:5353 组播地址
+  收到 _screenguardian._tcp 响应时，解析 TXT 记录获取设备信息
+  自动注册为待确认设备
+```
+
+### 3.9.3 接口定义
+
+#### I9.1 — 启动 P2P 同步
+
+```
+接口名称：P2PSync.start(pairingCode?: string)
+参数：pairingCode: 可选配对码
+返回值：void
 流程：
-  1. 验证路径存在且可写
-  2. 创建目录结构（如果不存在）
-  3. 首次同步：上传本地数据到网盘
-  4. 启动定时同步（每 5 分钟）
-  5. 启动文件监听（网盘文件变化时触发同步）
+  1. 启动 HTTP 服务器监听 19090 端口
+  2. 启动 mDNS 广播（注册 _screenguardian._tcp 服务）
+  3. 启动 mDNS 监听（发现其他设备）
+  4. 如果提供了配对码，启用加密
+  5. 启动定时同步（每 60 秒）
 ```
 
-#### I9.2 — 执行同步
+#### I9.2 — 设备审批
 
 ```
-接口名称：SyncService.sync()
-参数：无
-返回值：SyncResult
+接口名称：P2PSync.approveDevice(deviceId: string)
+接口名称：P2PSync.rejectDevice(deviceId: string)
 
-SyncResult {
-  success: boolean
-  sessionsUploaded: integer
-  sessionsDownloaded: integer
-  configMerged: boolean
-  error?: string
-}
+设备状态流转：
+  discovered (mDNS 发现) → pending (等待审批) → approved (已批准)
+                                                  → rejected (已拒绝)
+
+只有 approved 状态的设备才能进行数据同步。
 ```
 
-#### I9.3 — 同步流程（详细）
+#### I9.3 — 配对验证
 
 ```
-SYNC():
-  TRY:
-    1. 获取文件锁（创建 .lock 文件）
-    IF 锁获取失败:
-      WAIT 5秒 重试，最多 3 次
-      IF 仍然失败:
-        SKIP 本轮同步
-
-    2. ── 同步 Session 记录 ──
-       a. 读取网盘 sessions/{currentMonth}.json → cloudSessions[]
-       b. 读取本地 sessions/{currentMonth}.json → localSessions[]
-       c. 合并：
-          mergedSessions = []
-          allIds = SET(cloudSessions.map(s => s.id) ∪ localSessions.map(s => s.id))
-          FOR EACH id IN allIds:
-            cloud = cloudSessions.find(s => s.id == id)
-            local = localSessions.find(s => s.id == id)
-            IF cloud == null:
-              mergedSessions.push(local)  // 本地新增
-            ELSE IF local == null:
-              mergedSessions.push(cloud)  // 网盘新增
-            ELSE:
-              // 两边都有，取 updatedAt 更新的
-              IF cloud.updatedAt > local.updatedAt:
-                mergedSessions.push(cloud)
-              ELSE:
-                mergedSessions.push(local)
-       d. SORT mergedSessions BY startTime ASC
-       e. 写入网盘 sessions/{currentMonth}.json（原子写入）
-       f. 写入本地 sessions/{currentMonth}.json
-
-    3. ── 同步 DailySummary ──
-       同理，以 date 为主键合并
-
-    4. ── 同步 AppConfig ──
-       a. 读取网盘 config.json → cloudConfig
-       b. 读取本地 config.json → localConfig
-       c. IF cloudConfig.updatedAt > localConfig.updatedAt:
-            本地 = 网盘
-          ELSE IF localConfig.updatedAt > cloudConfig.updatedAt:
-            网盘 = 本地
-          ELSE:
-            无变化
-
-    5. ── 同步 WeeklyPlan ──
-       以 weekStart 为主键合并，取 createdAt 更新的
-
-    6. ── 同步 DeviceInfo ──
-       a. 读取网盘 devices/{deviceId}.json
-       b. 如果不存在，写入（注册新设备）
-       c. 如果存在，更新 lastSyncAt
-
-    7. ── 更新同步元数据 ──
-       更新 sync-meta.json 中本设备的 lastSyncAt 和 version
-
-    8. 释放文件锁（删除 .lock 文件）
-
-    RETURN SyncResult { success: true, ... }
-
-  CATCH error:
-    释放文件锁
-    RETURN SyncResult { success: false, error: error.message }
+接口名称：P2PSync.pairDevice(deviceId: string, code: string)
+流程：
+  1. 本地验证配对码是否正确
+  2. 向远程设备发送 POST /api/pair 请求
+  3. 远程设备验证配对码
+  4. 双方标记为已配对，启用加密通信
 ```
 
-#### I9.4 — 文件监听
+#### I9.4 — 同步流程
 
 ```
-// 监听网盘文件夹变化（网盘客户端同步完成后触发）
-WATCH syncFolderPath:
-  ON file_changed(path):
-    IF path MATCHES "sessions/*.json":
-      DEBOUNCE(5s, sync())
-    IF path MATCHES "config.json":
-      DEBOUNCE(5s, sync())
-    IF path MATCHES "plans/*.json":
-      DEBOUNCE(5s, sync())
+SYNC_WITH(device):
+  1. GET /api/sync/sessions?month=currentMonth → 拉取远程 session
+  2. 合并到本地（按 id 去重，updatedAt 取最新）
+  3. POST /api/sync/sessions → 推送本地 session
+  4. GET /api/sync/summaries → 拉取远程 summary
+  5. 合并到本地
+  6. POST /api/sync/summaries → 推送本地 summary
+
+所有请求带 HMAC 签名：
+  X-SG-Device: deviceId
+  X-SG-Time: timestamp
+  X-SG-Auth: HMAC-SHA256(pairingCode, deviceId:timestamp)
 ```
 
-### 3.9.3 冲突解决策略汇总
+#### I9.5 — HTTP API 端点
+
+| 端点 | 方法 | 认证 | 说明 |
+|------|------|------|------|
+| `/api/ping` | GET | 无 | 设备发现验证 |
+| `/api/pair` | POST | 无 | 配对码验证 |
+| `/api/sync/sessions` | GET | HMAC | 拉取 session 数据 |
+| `/api/sync/sessions` | POST | HMAC | 推送 session 数据 |
+| `/api/sync/summaries` | GET | HMAC | 拉取 summary 数据 |
+| `/api/sync/summaries` | POST | HMAC | 推送 summary 数据 |
+
+### 3.9.5 冲突解决策略汇总
 
 | 数据类型 | 主键 | 冲突解决 |
 |----------|------|----------|
 | ScreenSession | `id` (UUID) | 以 `updatedAt` 取最新 |
-| DailySummary | `date` | 合并：重新聚合 Session 数据 |
+| DailySummary | `date` | 合并后重新聚合（含时间段去重） |
 | AppConfig | 全局单例 | 以 `updatedAt` 取最新 |
 | WeeklyPlan | `weekStart` | 以 `createdAt` 取最新 |
 | DeviceInfo | `deviceId` | 各设备自行注册，不冲突 |
-| LLMRanking | `weekStart` | 以 `fetchedAt` 取最新 |
-| SyncMeta | 全局单例 | 合并各设备状态 |
 
-### 3.9.4 首次同步引导
+### 3.9.6 安全模型
 
 ```
-首次同步流程：
-  1. 检测到 syncFolderPath 未设置
-  2. 显示引导界面
-  3. 用户选择网盘文件夹
-  4. 验证路径：
-     - 目录存在？
-     - 可写？
-     - 已有 ScreenGuardian-Sync 目录？
-       - 如果有：这是加入已有同步组 → 下载网盘数据合并
-       - 如果没有：这是第一个设备 → 创建目录结构，上传本地数据
-  5. 完成引导
+配对码 → SHA256 密钥派生（10000 轮迭代） → 256 位加密密钥
+                                              ↓
+                                  XOR 加密 + 随机 IV + HMAC 完整性校验
+                                              ↓
+                                  配对验证文件（.screenguardian-pair.json）
+                                  只存哈希，不存明文码
 ```
-
----
 
 ## 3.10 模块 M10 — 每周用时总结
 
@@ -3347,18 +3359,18 @@ ON language_changed(newLang):
 ## Phase 2：提醒功能（第 3 周）
 
 ### 交付物
-- [ ] 用眼休息提醒（20 分钟触发，20 秒倒计时）
-- [ ] 姿势切换提醒（30~60 分钟可配置，2 分钟确认）
-- [ ] 弹窗 UI（桌面端 + 移动端）
-- [ ] 会议模式支持
-- [ ] 倒计时期间不可关闭
+- [x] 用眼休息提醒（20 分钟触发，20 秒倒计时）
+- [x] 姿势切换提醒（与用眼休息合并，40 分钟触发，2 分钟倒计时）
+- [x] 合并弹窗 UI（桌面端 + 移动端）
+- [x] 会议模式支持
+- [x] 倒计时期间不可关闭
 
 ### 验收标准
-- [ ] 20 分钟定时器准确触发
-- [ ] 倒计时期间弹窗无法关闭（ESC、Back、点击外部均无效）
-- [ ] 会议模式下关闭按钮始终可见
-- [ ] 弹窗关闭后自动创建新 Session
-- [ ] 两个提醒不重叠
+- [x] 20 分钟定时器准确触发
+- [x] 倒计时期间弹窗无法关闭
+- [x] 会议模式下关闭按钮始终可见
+- [x] 弹窗关闭后自动创建新 Session
+- [x] 两个提醒不重叠（单一定时器 + 计数器）
 
 ---
 
@@ -3382,17 +3394,19 @@ ON language_changed(newLang):
 ## Phase 4：同步与总结（第 5~6 周）
 
 ### 交付物
-- [ ] 网盘文件同步机制
-- [ ] 首次同步引导
-- [ ] 冲突解决
-- [ ] 每周用时总结
-- [ ] 超时提醒
+- [x] P2P mDNS 局域网同步（替代原网盘方案）
+- [x] mDNS 自动发现 + 设备审批
+- [x] 配对码加密同步
+- [x] 跨设备时间段去重
+- [x] 每周用时总结
+- [x] 超时提醒
 
 ### 验收标准
-- [ ] 两台设备数据能正确同步
-- [ ] 冲突数据正确合并
-- [ ] 周一第一台设备正确触发周总结
-- [ ] 超时提醒首次 + 每 25 分钟触发正确
+- [x] 两台设备在同一 WiFi 下自动发现
+- [x] 用户手动批准后才能同步
+- [x] 重叠时段不重复统计
+- [x] 周一第一台设备正确触发周总结
+- [x ] 超时提醒首次 + 每 25 分钟触发正确
 
 ---
 
@@ -3548,7 +3562,76 @@ generateDeviceId():
 
 ---
 
-> **文档版本**：V2.0
-> **最后更新**：2026-07-01
+> **文档版本**：V2.1
+> **最后更新**：2026-08-01
 > **作者**：TimberTrail
-> **页数**：约 120 页（A4 排版）
+> **页数**：约 130 页（A4 排版）
+
+---
+
+# 变更日志（Changelog）
+
+## V1.0.7（2026-08-01）
+
+### 重大变更
+
+1. **同步方案重构：网盘 → P2P mDNS**
+   - 完全移除网盘文件夹同步方案（SyncService）
+   - 改用 mDNS（组播 DNS，与 Apple Bonjour 同协议）局域网自动发现
+   - HTTP REST API 直接交换数据，端口 19090
+   - 配对码加密：SHA256 密钥派生 + XOR 加密 + HMAC 完整性校验
+   - 所有数据仅存储在本地设备，不依赖任何云服务
+
+2. **提醒模块合并：M4 + M5**
+   - 用眼休息（M4）和姿势切换（M5）合并为统一提醒模块
+   - 单一定时器每 20 分钟触发，计数器控制
+   - 第 1 次（20min）：仅用眼休息，倒计时 20 秒
+   - 第 2 次（40min）：合并提醒（姿势切换 + 用眼休息），倒计时 2 分钟
+   - 移除 `postureIntervalMinutes` 配置项（固定 = 2× 用眼休息间隔）
+
+3. **跨设备时间段去重**
+   - 新增区间合并算法（Interval Merge）
+   - 多设备同时段使用不重复统计（如手机+电脑同时 9:00-10:00 只算 1 小时）
+   - `getTodayTotalSeconds()` 和 `updateDailySummary()` 均使用去重计算
+
+### 其他变更
+
+4. **版本号单一来源**
+   - Mobile: `constants.dart` 中定义 `appVersion`
+   - Desktop: `package.json` 中定义，TypeScript 通过 `require()` 读取
+   - 其他各处从上述来源引用，不再硬编码
+
+5. **国际化完善**
+   - 所有提醒窗口（包括桌面端 HTML 模板）全部通过 i18n 系统渲染
+   - 移除所有 `isZh()` 硬编码判断
+   - 设置成英文时，提醒窗口也全英文
+
+6. **About 页面更新**
+   - 新增「隐私与同步说明」卡片
+   - 说明 P2P 同步机制、无云存储、设备审批机制
+
+7. **设置页面更新**
+   - P2P 设备审批集成到设置界面
+   - 移除网盘同步路径配置
+   - 移除姿势切换间隔滑块（改为固定 40 分钟说明）
+
+8. **周计划管理（移动端新增）**
+   - 新增 `weekly_plan_screen.dart`：设定每日目标、查看进度
+   - 新增 `overtime_alert_dialog.dart`：超时提醒弹窗组件
+   - 首页菜单从 2×2 扩展为 2×3，新增周计划入口
+
+9. **iOS ScreenTime API 集成**
+   - iOS 端完全改用 ScreenTime API（DeviceActivityMonitor Extension）
+   - 由系统管理扩展生命周期，不会被杀进程
+   - Shield 全屏遮罩作为提醒 UI，覆盖所有应用
+   - App Group 共享数据（UserDefaults）
+   - 需要 Family Controls 授权
+   - Flutter ↔ Swift 桥接插件（MethodChannel）
+
+### 涉及文件
+
+| 平台 | 新增 | 修改 | 删除 |
+|------|------|------|------|
+| Mobile | `weekly_plan_screen.dart`, `overtime_alert_dialog.dart`, `combined_reminder_dialog.dart`, `screentime_service.dart` | `main.dart`, `reminder_manager.dart`, `p2p_sync_service.dart`, `local_store.dart`, `i18n.dart`, `home_screen.dart`, `settings_screen.dart`, `about_screen.dart`, `constants.dart`, `pubspec.yaml` | `sync_service.dart` |
+| iOS Extension | `DeviceActivityMonitorExtension.swift`, `ScreenTimePlugin.swift`, `Info.plist`, entitlements ×2 | — | — |
+| Desktop | `p2p-sync-service.ts` (mDNS) | `main.ts`, `reminder-manager.ts`, `local-store.ts`, `i18n.ts`, `types.ts`, `preload.ts`, `index.html`, `app.js`, `main.css`, `package.json` | `sync-service.ts` |
