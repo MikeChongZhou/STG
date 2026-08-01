@@ -26,7 +26,7 @@ Then follow the Xcode steps below.
 3. Search for **"Device Activity Monitor"**
 4. Click **Next**
 5. Configure:
-   - Product Name: `ScreenTimeExtension`
+   - Product Name: `ScreenTimeExtention`
    - Team: Your developer team
    - Project: `Runner`
    - Embed in Application Extension: `Runner`
@@ -34,7 +34,7 @@ Then follow the Xcode steps below.
 
 ### Step 2: Configure App Groups
 
-For **BOTH** targets (Runner AND ScreenTimeExtension):
+For **BOTH** targets (Runner AND ScreenTimeExtention):
 
 1. Select the target in the project navigator
 2. Go to **Signing & Capabilities** tab
@@ -53,14 +53,14 @@ For **BOTH** targets:
 
 Xcode generates a default `DeviceActivityMonitorExtension.swift`. Replace it:
 
-1. In Xcode's file navigator, find `ScreenTimeExtension/DeviceActivityMonitorExtension.swift`
+1. In Xcode's file navigator, find `ScreenTimeExtention/DeviceActivityMonitorExtension.swift`
 2. Select all content (Cmd+A), delete it
-3. Copy the content from `ios/ScreenTimeExtension/DeviceActivityMonitorExtension.swift` in this repo
+3. Copy the content from `ios/ScreenTimeExtention/DeviceActivityMonitorExtension.swift` in this repo
 4. Paste it into Xcode
 
 ### Step 5: Configure Extension Info.plist
 
-In Xcode, select `ScreenTimeExtension/Info.plist` and ensure it contains:
+In Xcode, select `ScreenTimeExtention/Info.plist` and ensure it contains:
 
 ```xml
 <key>NSExtension</key>
@@ -122,7 +122,7 @@ open ios/Runner.xcworkspace
 └──────────┬──────────────────────┘
            │ App Group (UserDefaults)
 ┌──────────▼──────────────────────┐
-│  ScreenTimeExtension            │
+│  ScreenTimeExtention            │
 │  (DeviceActivityMonitor)        │
 │  → Triggers at 20min/40min     │
 │  → Shows Shield overlay        │

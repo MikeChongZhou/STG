@@ -5,7 +5,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>ScreenGuardian Monitor</string>
 	<key>CFBundleName</key>
-	<string>ScreenTimeExtension</string>
+	<string>ScreenTimeExtention</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleVersion</key>
