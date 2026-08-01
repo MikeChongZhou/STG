@@ -46,7 +46,9 @@ class P2PSyncService {
 
   // mDNS
   BonsoirService? _mdnsService;
+  BonsoirBroadcast? _mdnsBroadcast;
   BonsoirDiscovery? _mdnsDiscovery;
+  StreamSubscription<BonsoirEvent>? _discoverySub;
 
   // Streams
   final _devicesController = StreamController<List<TrustedDevice>>.broadcast();
@@ -75,7 +77,7 @@ class P2PSyncService {
         _paired = true;
       }
 
-      // Start mDNS advertisement
+      // Start mDNS
       await _startMdns();
 
       _running = true;
@@ -89,8 +91,12 @@ class P2PSyncService {
   }
 
   void stop() {
+    _discoverySub?.cancel();
+    _discoverySub = null;
+    _mdnsBroadcast?.stop();
+    _mdnsBroadcast = null;
     _mdnsDiscovery?.stop();
-    _mdnsService?.unregister();
+    _mdnsDiscovery = null;
     _server?.close();
     _server = null;
     _syncTimer?.cancel();
@@ -102,7 +108,7 @@ class P2PSyncService {
   // ============================================================
 
   Future<void> _startMdns() async {
-    // Register our service
+    // Create service to advertise
     _mdnsService = BonsoirService(
       name: _store.deviceId,
       type: '$_serviceType._tcp',
@@ -115,35 +121,34 @@ class P2PSyncService {
       },
     );
 
-    await _mdnsService!.register();
-    print('[P2P] mDNS service registered: ${_store.deviceName}');
+    // Start broadcasting
+    _mdnsBroadcast = BonsoirBroadcast(service: _mdnsService!);
+    await _mdnsBroadcast!.ready;
+    _mdnsBroadcast!.start();
+    print('[P2P] mDNS broadcast started: ${_store.deviceName}');
 
-    // Discover other services
+    // Start discovery
     _mdnsDiscovery = BonsoirDiscovery(type: '$_serviceType._tcp');
-    await _mdnsDiscovery!.ready;
-
-    _mdnsDiscovery!.eventStream?.listen((event) {
-      if (event.type == BonsoirDiscoveryEventType.serviceFound) {
-        final service = event.service;
-        if (service == null) return;
-        // Skip ourselves
-        if (service.name == _store.deviceId) return;
-
-        // Resolve the service to get IP and attributes
-        service.resolve(mdnsDiscovery!.serviceResolver);
-      } else if (event.type == BonsoirDiscoveryEventType.serviceResolved) {
-        final service = event.service;
-        if (service == null) return;
-        _onServiceResolved(service);
-      } else if (event.type == BonsoirDiscoveryEventType.serviceLost) {
-        final service = event.service;
-        if (service == null) return;
-        print('[P2P] Device lost: ${service.name}');
-      }
+    _discoverySub = _mdnsDiscovery!.eventStream.listen((event) {
+      _handleDiscoveryEvent(event);
     });
-
     _mdnsDiscovery!.start();
     print('[P2P] mDNS discovery started');
+  }
+
+  void _handleDiscoveryEvent(BonsoirEvent event) {
+    if (event is BonsoirDiscoveryServiceFoundEvent) {
+      final service = event.service;
+      // Skip ourselves
+      if (service.name == _store.deviceId) return;
+      // Resolve to get IP and attributes
+      service.resolve(_mdnsDiscovery!.serviceResolver);
+    } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
+      final service = event.service;
+      _onServiceResolved(service);
+    } else if (event is BonsoirDiscoveryServiceLostEvent) {
+      print('[P2P] Device lost: ${event.service.name}');
+    }
   }
 
   void _onServiceResolved(BonsoirService service) {
