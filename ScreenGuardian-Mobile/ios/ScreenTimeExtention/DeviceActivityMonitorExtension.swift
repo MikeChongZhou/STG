@@ -16,8 +16,7 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         log("intervalDidStart: \(activity.rawValue)")
-        let isCombined = (activity.rawValue == "combinedReminder")
-        showShieldReminder(isCombined: isCombined)
+        showShield()
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
@@ -37,13 +36,12 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
         super.intervalWillEndWarning(for: activity)
     }
 
-    func showShieldReminder(isCombined: Bool) {
+    func showShield() {
         let store = ManagedSettingsStore()
-        // Block all apps — user must wait for shield to be removed
         store.shield.applications = Set()
         store.shield.webDomains = Set()
-        saveEvent(type: isCombined ? "combined" : "eye_rest", action: "shown")
-        log("Shield applied: \(isCombined ? "combined" : "eye_rest")")
+        saveEvent(type: "eye_rest", action: "shown")
+        log("Shield applied")
     }
 
     func scheduleNextReminder() {
