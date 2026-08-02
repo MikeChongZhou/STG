@@ -186,9 +186,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           final type = call.arguments['type'] as String?;
           final fromBg = call.arguments['fromBackground'] as bool? ?? false;
           if (Platform.isIOS && fromBg) {
-            // Background notification fired while app was suspended.
-            // Record data and restart session — no need to show overlay.
-            _iosBackgroundReminderScheduled = false;
             _onReminderCountdownEnded();
             _reminderManager?.startTimers();
           } else if (type == 'combined') {

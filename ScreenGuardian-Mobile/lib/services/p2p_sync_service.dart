@@ -2,12 +2,6 @@
 ///
 /// Discovery: Uses mDNS (multicast DNS) via Bonsoir to advertise and
 /// discover ScreenGuardian devices on the local network. No IP scanning.
-///
-/// Flow:
-///   1. Each device advertises _screenguardian._tcp via mDNS
-///   2. Discovered devices appear as "pending" in device list
-///   3. User approves + enters pairing code to enable encrypted sync
-///   4. Only approved + paired devices exchange data
 
 import 'dart:async';
 import 'dart:convert';
@@ -22,7 +16,7 @@ import 'trusted_devices.dart';
 import 'sync_security.dart';
 
 const int _syncPort = 19090;
-const int _syncIntervalMs = 60 * 1000; // 1 minute on LAN
+const int _syncIntervalMs = 60 * 1000;
 const String _serviceType = '_screenguardian._tcp';
 
 class SyncResult {
@@ -44,13 +38,11 @@ class P2PSyncService {
   String? _pairingCode;
   bool _paired = false;
 
-  // mDNS
   BonsoirService? _mdnsService;
   BonsoirBroadcast? _mdnsBroadcast;
   BonsoirDiscovery? _mdnsDiscovery;
-  StreamSubscription<BonsoirEvent>? _discoverySub;
+  StreamSubscription? _discoverySub;
 
-  // Streams
   final _devicesController = StreamController<List<TrustedDevice>>.broadcast();
   Stream<List<TrustedDevice>> get devicesStream => _devicesController.stream;
 
@@ -60,15 +52,10 @@ class P2PSyncService {
 
   TrustedDevicesManager get trustedDevices => _trustedDevices;
 
-  // ============================================================
-  // Lifecycle
-  // ============================================================
-
   Future<bool> start({String? pairingCode}) async {
     try {
       await _trustedDevices.load();
 
-      // Start HTTP server for sync
       _server = await shelf_io.serve(_handleRequest, InternetAddress.anyIPv4, _syncPort);
       print('[P2P] HTTP sync server on port $_syncPort');
 
@@ -77,7 +64,6 @@ class P2PSyncService {
         _paired = true;
       }
 
-      // Start mDNS
       await _startMdns();
 
       _running = true;
@@ -103,12 +89,7 @@ class P2PSyncService {
     _running = false;
   }
 
-  // ============================================================
-  // mDNS Discovery
-  // ============================================================
-
   Future<void> _startMdns() async {
-    // Create service to advertise
     _mdnsService = BonsoirService(
       name: _store.deviceId,
       type: '$_serviceType._tcp',
@@ -121,57 +102,56 @@ class P2PSyncService {
       },
     );
 
-    // Start broadcasting
     _mdnsBroadcast = BonsoirBroadcast(service: _mdnsService!);
     await _mdnsBroadcast!.ready;
     _mdnsBroadcast!.start();
     print('[P2P] mDNS broadcast started: ${_store.deviceName}');
 
-    // Start discovery
     _mdnsDiscovery = BonsoirDiscovery(type: '$_serviceType._tcp');
-    _discoverySub = _mdnsDiscovery!.eventStream.listen((event) {
-      _handleDiscoveryEvent(event);
-    });
+    final stream = _mdnsDiscovery!.eventStream;
+    if (stream != null) {
+      _discoverySub = stream.listen((event) {
+        _handleDiscoveryEvent(event);
+      });
+    }
     _mdnsDiscovery!.start();
     print('[P2P] mDNS discovery started');
   }
 
-  void _handleDiscoveryEvent(BonsoirEvent event) {
-    if (event is BonsoirDiscoveryServiceFoundEvent) {
+  void _handleDiscoveryEvent(BonsoirDiscoveryEvent event) {
+    if (event.type == BonsoirDiscoveryEventType.serviceFound) {
       final service = event.service;
-      // Skip ourselves
-      if (service.name == _store.deviceId) return;
-      // Resolve to get IP and attributes
+      if (service == null || service.name == _store.deviceId) return;
       service.resolve(_mdnsDiscovery!.serviceResolver);
-    } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
+    } else if (event.type == BonsoirDiscoveryEventType.serviceResolved) {
       final service = event.service;
+      if (service == null) return;
       _onServiceResolved(service);
-    } else if (event is BonsoirDiscoveryServiceLostEvent) {
-      print('[P2P] Device lost: ${event.service.name}');
+    } else if (event.type == BonsoirDiscoveryEventType.serviceLost) {
+      print('[P2P] Device lost: ${event.service?.name}');
     }
   }
 
   void _onServiceResolved(BonsoirService service) {
     final attrs = service.attributes;
-    final deviceId = attrs['id'] ?? service.name;
-    final deviceName = attrs['name'] ?? 'Unknown Device';
-    final platform = attrs['platform'] ?? 'unknown';
+    final deviceId = (attrs != null && attrs.containsKey('id')) ? attrs['id'] : service.name;
+    final deviceName = (attrs != null && attrs.containsKey('name')) ? attrs['name'] : 'Unknown Device';
+    final platform = (attrs != null && attrs.containsKey('platform')) ? attrs['platform'] : 'unknown';
 
     if (deviceId == _store.deviceId) return;
 
-    // Get IP from the resolved service
     final ip = service.host;
     if (ip == null) return;
 
     _trustedDevices.discoverDevice(
-      deviceId: deviceId,
-      deviceName: deviceName,
+      deviceId: deviceId ?? service.name,
+      deviceName: deviceName ?? 'Unknown Device',
       ip: ip,
       port: service.port,
-      platform: platform,
+      platform: platform ?? 'unknown',
     );
 
-    _trustedDevices.updateDeviceEndpoint(deviceId, ip, service.port);
+    _trustedDevices.updateDeviceEndpoint(deviceId ?? service.name, ip, service.port);
     _devicesController.add(_trustedDevices.allDevices);
 
     print('[P2P] Discovered: $deviceName ($ip:${service.port})');
@@ -184,7 +164,6 @@ class P2PSyncService {
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     final path = request.requestedUri.path;
 
-    // Ping (no auth, for discovery)
     if (path == '/api/ping' && request.method == 'GET') {
       return shelf.Response.ok(jsonEncode({
         'deviceId': _store.deviceId,
@@ -194,7 +173,6 @@ class P2PSyncService {
       }), headers: {'Content-Type': 'application/json'});
     }
 
-    // Pairing
     if (path == '/api/pair' && request.method == 'POST') {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final code = body['pairingCode'] as String?;
@@ -206,7 +184,6 @@ class P2PSyncService {
       return shelf.Response.forbidden(jsonEncode({'status': 'invalid_code'}));
     }
 
-    // Auth check for all sync endpoints
     final deviceId = request.headers['X-SG-Device'];
     final authHmac = request.headers['X-SG-Auth'];
     final timestamp = request.headers['X-SG-Time'];
@@ -218,8 +195,6 @@ class P2PSyncService {
     if (!_verifyHmac(authHmac, timestamp, deviceId)) {
       return shelf.Response.forbidden(jsonEncode({'error': 'auth failed'}));
     }
-
-    // --- Sync endpoints (approved devices only) ---
 
     if (path == '/api/sync/sessions' && request.method == 'GET') {
       final month = request.requestedUri.queryParameters['month'] ?? _currentMonth();
@@ -253,7 +228,7 @@ class P2PSyncService {
   }
 
   // ============================================================
-  // Sync with approved devices
+  // Sync
   // ============================================================
 
   Future<SyncResult> syncWithAll() async {
@@ -289,7 +264,6 @@ class P2PSyncService {
     try {
       final base = 'http://${device.ip}:${device.port}';
 
-      // Pull sessions
       final sReq = await client.getUrl(Uri.parse('$base/api/sync/sessions?month=$month'));
       _sign(sReq);
       final sResp = await sReq.close();
@@ -297,12 +271,10 @@ class P2PSyncService {
         final raw = await sResp.transform(utf8.decoder).join();
         final data = _dec(raw, device.deviceId);
         if (data != null) {
-          final remote = jsonDecode(data) as List<dynamic>;
-          downloaded += await _mergeSessions(remote);
+          downloaded += await _mergeSessions(jsonDecode(data) as List<dynamic>);
         }
       }
 
-      // Push sessions
       final localSessions = await _store.loadSessions(month);
       final pReq = await client.postUrl(Uri.parse('$base/api/sync/sessions'));
       _sign(pReq);
@@ -310,7 +282,6 @@ class P2PSyncService {
       await pReq.close();
       uploaded += localSessions.length;
 
-      // Pull summaries
       final sumReq = await client.getUrl(Uri.parse('$base/api/sync/summaries?month=$month'));
       _sign(sumReq);
       final sumResp = await sumReq.close();
@@ -322,7 +293,6 @@ class P2PSyncService {
         }
       }
 
-      // Push summaries
       final localSummaries = await _store.loadSummaries(month);
       final psReq = await client.postUrl(Uri.parse('$base/api/sync/summaries'));
       _sign(psReq);
@@ -337,10 +307,6 @@ class P2PSyncService {
     }
   }
 
-  // ============================================================
-  // Merge (newer wins)
-  // ============================================================
-
   Future<int> _mergeSessions(List<dynamic> remoteData) async {
     final month = _currentMonth();
     final local = await _store.loadSessions(month);
@@ -354,11 +320,9 @@ class P2PSyncService {
       if (existing == null) {
         map[rm['id']] = rm;
         newCount++;
-      } else {
-        if (DateTime.parse(rm['updatedAt']).millisecondsSinceEpoch >
-            DateTime.parse(existing['updatedAt']).millisecondsSinceEpoch) {
-          map[rm['id']] = rm;
-        }
+      } else if (DateTime.parse(rm['updatedAt']).millisecondsSinceEpoch >
+          DateTime.parse(existing['updatedAt']).millisecondsSinceEpoch) {
+        map[rm['id']] = rm;
       }
     }
 
@@ -405,8 +369,7 @@ class P2PSyncService {
     if (ts == null) return false;
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     if ((now - ts).abs() > 30) return false;
-    final expected = _hmac(deviceId, timestamp);
-    return hmac == expected;
+    return hmac == _hmac(deviceId, timestamp);
   }
 
   void _sign(HttpClientRequest req) {
@@ -441,10 +404,6 @@ class P2PSyncService {
   }
 
   String _currentMonth() => DateTime.now().toIso8601String().substring(0, 7);
-
-  // ============================================================
-  // Public
-  // ============================================================
 
   bool get isRunning => _running;
   bool get isPaired => _paired;
