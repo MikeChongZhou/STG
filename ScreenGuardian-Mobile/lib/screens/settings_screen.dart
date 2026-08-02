@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants.dart';
-import '../models/types.dart';
 import '../services/local_store.dart';
 import '../services/p2p_sync_service.dart';
 import '../services/trusted_devices.dart';
@@ -35,7 +34,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _overtimeEnabled = true;
   bool _autoStart = true;
   String _deviceName = '';
-  String _pairingCode = '';
   bool _saving = false;
   bool _hasFullScreenPermission = false;
   bool _hasNotificationPermission = false;
@@ -469,7 +467,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _deviceTile(TrustedDevice device) {
     final isPending = device.status == DeviceStatus.pending;
     final isApproved = device.status == DeviceStatus.approved;
-    final isRejected = device.status == DeviceStatus.rejected;
 
     return Card(
       color: isPending ? Colors.orange[50] : (isApproved ? Colors.green[50] : Colors.grey[100]),

@@ -3,7 +3,6 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -219,10 +218,6 @@ class LocalStore {
     return sessions;
   }
 
-  List<ScreenSession> _loadSessionsSync(String monthKey) {
-    final list = _readJsonListSync('sessions/$monthKey.json');
-    return list.map((e) => ScreenSession.fromJson(e as Map<String, dynamic>)).toList();
-  }
 
   Future<ScreenSession> createSession({DateTime? startTime}) async {
     final now = startTime ?? DateTime.now();
@@ -528,16 +523,6 @@ class LocalStore {
     }
   }
 
-  List<dynamic> _readJsonListSync(String relativePath) {
-    try {
-      final file = File(p.join(_dataDir.path, relativePath));
-      if (!file.existsSync()) return [];
-      final content = file.readAsStringSync();
-      return jsonDecode(content) as List<dynamic>;
-    } catch (e) {
-      return [];
-    }
-  }
 
   void _writeJsonSync(String relativePath, dynamic data) {
     try {

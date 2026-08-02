@@ -1,7 +1,6 @@
 /// Overtime Alert Dialog - Shown when screen time exceeds daily plan
 /// Supports first-time alert and repeated reminders
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../utils/i18n.dart';
 

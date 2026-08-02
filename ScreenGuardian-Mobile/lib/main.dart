@@ -48,7 +48,6 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
-  LocalStore? _store;
   SessionManager? _sessionManager;
   ReminderManager? _reminderManager;
   P2PSyncService? _p2pSync;
@@ -233,7 +232,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     });
 
     setState(() {
-      _store = store;
       _sessionManager = sessionManager;
       _reminderManager = reminderManager;
       _p2pSync = p2pSync;

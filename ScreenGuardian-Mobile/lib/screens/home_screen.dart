@@ -36,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
-    final screenW = MediaQuery.of(context).size.width;
+    // final screenW = MediaQuery.of(context).size.width;
     final isSmall = screenH < 700; // 小屏手机
 
     // 根据屏幕高度自适应间距

@@ -3,7 +3,6 @@
 
 import 'dart:async';
 import '../models/types.dart';
-import '../utils/time_utils.dart';
 import 'local_store.dart';
 
 class SessionManager {

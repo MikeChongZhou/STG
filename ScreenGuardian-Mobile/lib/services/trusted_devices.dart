@@ -2,9 +2,6 @@
 /// Manages the list of approved devices for P2P sync
 /// Only devices explicitly approved by the user can sync data
 
-import 'dart:convert';
-import 'dart:io';
-import 'package:path/path.dart' as p;
 import 'local_store.dart';
 
 enum DeviceStatus { pending, approved, rejected }

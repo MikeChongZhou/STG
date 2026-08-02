@@ -119,20 +119,23 @@ class P2PSyncService {
   }
 
   void _handleDiscoveryEvent(BonsoirDiscoveryEvent event) {
-    if (event.type == BonsoirDiscoveryEventType.serviceFound) {
+    if (event.type == BonsoirDiscoveryEventType.discoveryServiceFound) {
+      // Service found but not yet resolved (no IP). Platform resolves automatically.
       final service = event.service;
       if (service == null || service.name == _store.deviceId) return;
-      service.resolve(_mdnsDiscovery!.serviceResolver);
-    } else if (event.type == BonsoirDiscoveryEventType.serviceResolved) {
+      print('[P2P] Service found: ${service.name}, waiting for resolution...');
+    } else if (event.type == BonsoirDiscoveryEventType.discoveryServiceResolved) {
+      // Service resolved — now we have the IP address
       final service = event.service;
-      if (service == null) return;
-      _onServiceResolved(service);
-    } else if (event.type == BonsoirDiscoveryEventType.serviceLost) {
+      if (service is ResolvedBonsoirService) {
+        _onServiceResolved(service);
+      }
+    } else if (event.type == BonsoirDiscoveryEventType.discoveryServiceLost) {
       print('[P2P] Device lost: ${event.service?.name}');
     }
   }
 
-  void _onServiceResolved(BonsoirService service) {
+  void _onServiceResolved(ResolvedBonsoirService service) {
     final attrs = service.attributes;
     final deviceId = (attrs != null && attrs.containsKey('id')) ? attrs['id'] : service.name;
     final deviceName = (attrs != null && attrs.containsKey('name')) ? attrs['name'] : 'Unknown Device';
@@ -140,7 +143,7 @@ class P2PSyncService {
 
     if (deviceId == _store.deviceId) return;
 
-    final ip = service.host;
+    final ip = service.ip;
     if (ip == null) return;
 
     _trustedDevices.discoverDevice(

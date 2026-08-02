@@ -405,7 +405,6 @@ class _WeeklyPlanScreenState extends State<WeeklyPlanScreen> {
     }
 
     final avgSeconds = daysWithData > 0 ? totalWeekSeconds ~/ daysWithData : 0;
-    final weekPlannedTotal = plannedSeconds * 7;
 
     // Today's data
     final todaySummary = _weekSummaries.where((s) => s.date == today).firstOrNull;

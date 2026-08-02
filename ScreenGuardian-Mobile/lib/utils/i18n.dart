@@ -1,6 +1,5 @@
 /// Internationalization for ScreenGuardian Mobile
 
-import '../constants.dart';
 
 class AppStrings {
   static String _lang = 'zh-CN';
