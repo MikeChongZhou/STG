@@ -34,6 +34,34 @@ import ManagedSettings
                 result(FlutterMethodNotImplemented)
             }
         }
+
+        // Foreground service channel (Android parity — no-ops on iOS)
+        let fgChannel = FlutterMethodChannel(
+            name: "com.timbertrail.screenguardian/foreground",
+            binaryMessenger: messenger
+        )
+        fgChannel.setMethodCallHandler { (call, result) in
+            switch call.method {
+            case "startForegroundService":
+                result(true)
+            case "cancelBackgroundReminder":
+                result(true)
+            case "scheduleBackgroundReminder":
+                result(true)
+            case "hasFullScreenPermission":
+                result(true)
+            case "requestFullScreenPermission":
+                result(true)
+            case "openFullScreenSettings":
+                result(true)
+            case "isInCall":
+                result(false)
+            case "isScreenOn":
+                result(true)
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        }
     }
 
     // MARK: - ScreenTime Method Channel Handler
