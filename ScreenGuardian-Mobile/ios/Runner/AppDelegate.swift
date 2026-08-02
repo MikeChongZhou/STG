@@ -19,8 +19,10 @@ import ManagedSettings
     func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
         GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-        // Register ScreenTime method channel
-        let messenger = engineBridge.binaryMessenger
+        // Get the binary messenger from the engine
+        guard let engine = engineBridge as? FlutterEngine else { return }
+        let messenger = engine.binaryMessenger
+
         let channel = FlutterMethodChannel(
             name: "com.timbertrail.screenguardian/screentime",
             binaryMessenger: messenger
@@ -32,21 +34,26 @@ import ManagedSettings
 
     // MARK: - ScreenTime Method Channel Handler
 
+    @available(iOS 15.0, *)
     private func handleScreenTime(call: FlutterMethodCall, result: @escaping FlutterResult) {
         let sharedDefaults = UserDefaults(suiteName: AppDelegate.appGroupID)
 
         switch call.method {
 
         case "requestAuthorization":
-            Task {
-                do {
-                    try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-                    DispatchQueue.main.async { result(true) }
-                } catch {
-                    DispatchQueue.main.async {
-                        result(FlutterError(code: "AUTH_FAILED", message: error.localizedDescription, details: nil))
+            if #available(iOS 16.0, *) {
+                Task {
+                    do {
+                        try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                        DispatchQueue.main.async { result(true) }
+                    } catch {
+                        DispatchQueue.main.async {
+                            result(FlutterError(code: "AUTH_FAILED", message: error.localizedDescription, details: nil))
+                        }
                     }
                 }
+            } else {
+                result(FlutterError(code: "UNSUPPORTED", message: "iOS 16+ required", details: nil))
             }
 
         case "getAuthorizationStatus":
@@ -59,24 +66,30 @@ import ManagedSettings
             }
 
         case "startMonitoring":
-            let count = sharedDefaults?.integer(forKey: "triggerCount") ?? 0
-            let isCombined = (count % 2 == 1)
-            let interval: TimeInterval = isCombined ? 40 * 60 : 20 * 60
-            let activityName = DeviceActivityName(isCombined ? "combinedReminder" : "eyeRestReminder")
-            let schedule = DeviceActivitySchedule(
-                intervalStart: DateComponents(second: 0),
-                intervalEnd: DateComponents(second: Int(interval)),
-                repeats: false
-            )
-            do {
-                try DeviceActivityCenter().startMonitoring(activityName, during: schedule)
-                result(true)
-            } catch {
-                result(FlutterError(code: "MONITOR_FAILED", message: error.localizedDescription, details: nil))
+            if #available(iOS 16.0, *) {
+                let count = sharedDefaults?.integer(forKey: "triggerCount") ?? 0
+                let isCombined = (count % 2 == 1)
+                let interval: TimeInterval = isCombined ? 40 * 60 : 20 * 60
+                let activityName = DeviceActivityName(isCombined ? "combinedReminder" : "eyeRestReminder")
+                let schedule = DeviceActivitySchedule(
+                    intervalStart: DateComponents(second: 0),
+                    intervalEnd: DateComponents(second: Int(interval)),
+                    repeats: false
+                )
+                do {
+                    try DeviceActivityCenter().startMonitoring(activityName, during: schedule)
+                    result(true)
+                } catch {
+                    result(FlutterError(code: "MONITOR_FAILED", message: error.localizedDescription, details: nil))
+                }
+            } else {
+                result(FlutterError(code: "UNSUPPORTED", message: "iOS 16+ required", details: nil))
             }
 
         case "stopMonitoring":
-            DeviceActivityCenter().stopMonitoring()
+            if #available(iOS 16.0, *) {
+                DeviceActivityCenter().stopMonitoring()
+            }
             result(true)
 
         case "getTriggerCount":
@@ -97,7 +110,9 @@ import ManagedSettings
             result(sharedDefaults?.array(forKey: "extensionLogs") as? [String] ?? [])
 
         case "clearShields":
-            ManagedSettingsStore().clearAllSettings()
+            if #available(iOS 16.0, *) {
+                ManagedSettingsStore().clearAllSettings()
+            }
             result(true)
 
         case "getDeviceUsageToday":
