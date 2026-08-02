@@ -60,7 +60,7 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
         )
 
         do {
-            try DeviceActivityCenter().startMonitoring([name], during: schedule)
+            try DeviceActivityCenter().startMonitoring(name, during: schedule)
             log("Scheduled: \(name.rawValue) in \(Int(interval))s (#\(newCount))")
         } catch {
             log("Schedule failed: \(error)")
