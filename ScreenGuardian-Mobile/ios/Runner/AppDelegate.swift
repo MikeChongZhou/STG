@@ -19,9 +19,15 @@ import ManagedSettings
     func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
         GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-        // Get the binary messenger from the engine
-        guard let engine = engineBridge as? FlutterEngine else { return }
-        let messenger = engine.binaryMessenger
+        // Get the binary messenger
+        let messenger: FlutterBinaryMessenger
+        if let engine = engineBridge as? FlutterEngine {
+            messenger = engine.binaryMessenger
+        } else if let registrar = self.registrar(forPlugin: "ScreenTimePlugin") {
+            messenger = registrar.messenger()
+        } else {
+            return
+        }
 
         let channel = FlutterMethodChannel(
             name: "com.timbertrail.screenguardian/screentime",

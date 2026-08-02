@@ -108,6 +108,7 @@ class P2PSyncService {
     print('[P2P] mDNS broadcast started: ${_store.deviceName}');
 
     _mdnsDiscovery = BonsoirDiscovery(type: '$_serviceType._tcp');
+    await _mdnsDiscovery!.ready;
     final stream = _mdnsDiscovery!.eventStream;
     if (stream != null) {
       _discoverySub = stream.listen((event) {
