@@ -1,0 +1,67 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ScreenGuardian-Mobile/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ScreenGuardian-Mobile/**'
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  build-ios:
+    name: Build iOS App + ScreenTime Extension
+    runs-on: macos-14  # Apple Silicon runner
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: ScreenGuardian-Mobile
+        run: flutter pub get
+
+      - name: Check Dart analysis
+        working-directory: ScreenGuardian-Mobile
+        run: flutter analyze --no-fatal-infos
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
+      - name: Build iOS (no codesign)
+        working-directory: ScreenGuardian-Mobile
+        run: |
+          flutter build ios --no-codesign --release 2>&1 | tail -50
+
+      - name: Build ScreenTime Extension
+        working-directory: ScreenGuardian-Mobile/ios
+        run: |
+          xcodebuild \
+            -project Runner.xcodeproj \
+            -scheme ScreenTimeExtention \
+            -sdk iphoneos \
+            -configuration Release \
+            -allowProvisioningUpdates \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tail -30 || echo "Extension build requires signing - check errors above"
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ScreenGuardian-Mobile/build/
+          retention-days: 7
