@@ -28,7 +28,11 @@ import ManagedSettings
             binaryMessenger: messenger
         )
         channel.setMethodCallHandler { [weak self] (call, result) in
-            self?.handleScreenTime(call: call, result: result)
+            if #available(iOS 15.0, *) {
+                self?.handleScreenTime(call: call, result: result)
+            } else {
+                result(FlutterMethodNotImplemented)
+            }
         }
     }
 
