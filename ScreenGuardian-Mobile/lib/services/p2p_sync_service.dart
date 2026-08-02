@@ -56,7 +56,7 @@ class P2PSyncService {
     try {
       await _trustedDevices.load();
 
-      _server = await shelf_io.serve(_handleRequest, InternetAddress.anyIPv4, _syncPort);
+      _server = await shelf_io.serve(_handleRequest, InternetAddress.anyIPv4, _syncPort, shared: true);
       print('[P2P] HTTP sync server on port $_syncPort');
 
       if (pairingCode != null && pairingCode.isNotEmpty) {
