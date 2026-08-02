@@ -62,12 +62,10 @@ import ManagedSettings
 
         case "getAuthorizationStatus":
             let status = AuthorizationCenter.shared.authorizationStatus
-            switch status {
-            case .notDetermined: result("notDetermined")
-            case .denied: result("denied")
-            case .approved: result("approved")
-            @unknown default: result("unknown")
-            }
+            if status == .notDetermined { result("notDetermined") }
+            else if status == .denied { result("denied") }
+            else if status == .approved { result("approved") }
+            else { result("unknown") }
 
         case "startMonitoring":
             if #available(iOS 16.0, *) {
